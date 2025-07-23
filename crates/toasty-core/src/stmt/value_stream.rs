@@ -1,7 +1,7 @@
 use super::*;
 
 use std::{
-    collections::VecDeque,
+    collections::{vec_deque::IterMut, VecDeque},
     fmt, mem,
     pin::Pin,
     task::{Context, Poll},
@@ -127,11 +127,26 @@ impl ValueStream {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Value> {
         assert!(self.stream.is_none());
 
-        // TODO: don't box
+        enum MutValueIter<'a> {
+            One(Option<&'a mut Value>),
+            Many(IterMut<'a, Value>),
+        }
+
+        impl<'a> Iterator for MutValueIter<'a> {
+            type Item = &'a mut Value;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    MutValueIter::One(value) => value.take(),
+                    MutValueIter::Many(iter_mut) => iter_mut.next(),
+                }
+            }
+        }
+
         match &mut self.buffer {
-            Buffer::Empty => Box::new(None.into_iter()),
-            Buffer::One(v) => Box::new(Some(v).into_iter()),
-            Buffer::Many(v) => Box::new(v.iter_mut()) as Box<dyn Iterator<Item = &mut Value>>,
+            Buffer::Empty => MutValueIter::One(None),
+            Buffer::One(v) => MutValueIter::One(Some(v)),
+            Buffer::Many(v) => MutValueIter::Many(v.iter_mut()),
         }
     }
 
