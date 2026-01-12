@@ -46,7 +46,7 @@ impl Builder {
     }
 
     pub async fn build(&mut self, driver: impl Driver) -> Result<Db> {
-        let pool = Pool::new(driver).await?;
+        let pool = Pool::new(driver)?;
 
         // Validate capability consistency
         pool.capability().validate()?;
@@ -55,7 +55,7 @@ impl Builder {
             .core
             .build(self.build_app_schema()?, pool.capability())?;
 
-        let engine = Engine::new(Arc::new(schema), Arc::new(pool));
+        let engine = Engine::new(Arc::new(schema), pool);
         let engine2 = engine.clone();
 
         let (in_tx, mut in_rx) = tokio::sync::mpsc::unbounded_channel::<(

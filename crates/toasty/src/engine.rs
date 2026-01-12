@@ -40,12 +40,12 @@ pub(crate) struct Engine {
     pub(crate) schema: Arc<Schema>,
 
     /// Handle to the connection pool.
-    pub(crate) pool: Arc<Pool>,
+    pub(crate) pool: Pool,
 }
 
 impl Engine {
     /// Creates a new [`Engine`] with the given schema and driver.
-    pub(crate) fn new(schema: Arc<Schema>, pool: Arc<Pool>) -> Engine {
+    pub(crate) fn new(schema: Arc<Schema>, pool: Pool) -> Engine {
         Engine { schema, pool }
     }
 

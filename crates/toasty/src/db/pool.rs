@@ -37,7 +37,7 @@ impl Default for PoolConfig {
 }
 
 /// A connection pool that manages database connections.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pool {
     inner: deadpool::managed::Pool<Manager>,
     // TODO: Capability should just be constant for each driver and not require an active
@@ -47,7 +47,7 @@ pub struct Pool {
 
 impl Pool {
     /// Creates a new connection pool from the given driver.
-    pub async fn new(driver: impl Driver) -> crate::Result<Self> {
+    pub fn new(driver: impl Driver) -> crate::Result<Self> {
         let max_connections = driver.max_connections();
         let capability = driver.capability();
 
@@ -65,8 +65,8 @@ impl Pool {
     }
 
     /// Creates a new connection pool from a connection URL.
-    pub async fn connect(url: &str) -> crate::Result<Self> {
-        Self::new(Connect::new(url)?).await
+    pub fn connect(url: &str) -> crate::Result<Self> {
+        Self::new(Connect::new(url)?)
     }
 
     /// Retrieves a connection from the pool.
