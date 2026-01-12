@@ -49,6 +49,8 @@ impl Pool {
     /// Creates a new connection pool from the given driver.
     pub async fn new(driver: impl Driver) -> crate::Result<Self> {
         let max_connections = driver.max_connections();
+        let capability = driver.capability();
+
         let mut builder = deadpool::managed::Pool::builder(Manager {
             driver: Box::new(driver),
         })
@@ -59,15 +61,7 @@ impl Pool {
         }
 
         let inner = builder.build()?;
-
-        let connection = match inner.get().await {
-            Ok(connection) => connection,
-            Err(err) => return Err(anyhow::anyhow!("failed to establish connection: {err}")),
-        };
-        Ok(Self {
-            inner,
-            capability: connection.capability(),
-        })
+        Ok(Self { inner, capability })
     }
 
     /// Creates a new connection pool from a connection URL.

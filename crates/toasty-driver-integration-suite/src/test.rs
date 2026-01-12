@@ -36,10 +36,7 @@ impl Test {
 
         // Get capability early
         let driver = setup.driver();
-        let capability = runtime.block_on(async {
-            let conn = driver.connect().await.expect("failed to connect");
-            conn.capability()
-        });
+        let capability = driver.capability();
 
         Test {
             setup,
