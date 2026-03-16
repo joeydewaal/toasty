@@ -18,6 +18,7 @@ impl Expand<'_> {
 
         quote! {
             #vis struct #query_struct_ident {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Query<#model_ident>,
             }
 

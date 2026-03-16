@@ -52,6 +52,7 @@ impl Expand<'_> {
         // Generate struct with path field
         quote!(
             #vis struct #field_struct_ident {
+                #[doc(hidden)]
                 path: #toasty::Path<#model_ident>,
             }
 

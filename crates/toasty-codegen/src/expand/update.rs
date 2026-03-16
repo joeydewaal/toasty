@@ -14,7 +14,9 @@ impl Expand<'_> {
 
         quote! {
             #vis struct #update_struct_ident<'a> {
+                #[doc(hidden)]
                 stmt: &'a mut #toasty::core::stmt::Update,
+                #[doc(hidden)]
                 projection: #toasty::stmt::Projection,
             }
 
@@ -216,7 +218,9 @@ impl Expand<'_> {
         quote! {
             // Unified update builder generic over the target type
             #vis struct #update_struct_ident<#target_ty = #toasty::Query> {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Update<#model_ident>,
+                #[doc(hidden)]
                 target: #target_ty,
             }
 

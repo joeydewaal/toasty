@@ -19,22 +19,27 @@ impl Expand<'_> {
 
         quote! {
             #vis struct Many {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Association<#toasty::List<#model_ident>>,
             }
 
             #vis struct One {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Query<#model_ident>,
             }
 
             #vis struct OptionOne {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Query<#model_ident>,
             }
 
             #vis struct ManyField {
+                #[doc(hidden)]
                 path: #toasty::Path<#toasty::List<#model_ident>>,
             }
 
             #vis struct OneField {
+                #[doc(hidden)]
                 path: #toasty::Path<#model_ident>,
             }
 

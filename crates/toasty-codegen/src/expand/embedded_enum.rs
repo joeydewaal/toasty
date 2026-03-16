@@ -140,6 +140,7 @@ impl Expand<'_> {
 
                 quote! {
                     #vis struct #variant_handle_ident {
+                        #[doc(hidden)]
                         path: #toasty::Path<#model_ident>,
                     }
 
@@ -166,6 +167,7 @@ impl Expand<'_> {
                     }
 
                     #vis struct #variant_field_struct_ident {
+                        #[doc(hidden)]
                         path: #toasty::Path<#model_ident>,
                     }
 
@@ -184,6 +186,7 @@ impl Expand<'_> {
 
         quote! {
             #vis struct #field_struct_ident {
+                #[doc(hidden)]
                 path: #toasty::Path<#model_ident>,
             }
 

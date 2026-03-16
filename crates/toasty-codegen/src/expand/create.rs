@@ -15,6 +15,7 @@ impl Expand<'_> {
 
         quote! {
             #vis struct #create_struct_ident {
+                #[doc(hidden)]
                 stmt: #toasty::stmt::Insert<#model_ident>,
             }
 
