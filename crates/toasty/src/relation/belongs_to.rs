@@ -32,8 +32,8 @@ impl<T: Relation> BelongsTo<T> {
         self.value.is_none()
     }
 
-    pub fn unload(&mut self) {
-        self.value = None;
+    pub fn unload(&mut self) -> Option<T> {
+        self.value.take().map(|v| *v)
     }
 }
 

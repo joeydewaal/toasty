@@ -323,7 +323,7 @@ impl Expand<'_> {
                 _ => {
                     // Relation fields (BelongsTo, HasMany, HasOne) are unloaded on update.
                     // Embedded fields are handled above via the Primitive arm.
-                    quote!(#i => self.#field_ident.unload(),)
+                    quote!(#i => { self.#field_ident.unload(); })
                 }
             }
 

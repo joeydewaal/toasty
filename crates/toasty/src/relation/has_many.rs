@@ -44,8 +44,8 @@ impl<T: Relation> HasMany<T> {
         self.values.is_none()
     }
 
-    pub fn unload(&mut self) {
-        self.values = None;
+    pub fn unload(&mut self) -> Option<Vec<T>> {
+        self.values.take()
     }
 }
 

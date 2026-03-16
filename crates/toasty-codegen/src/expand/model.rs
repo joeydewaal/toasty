@@ -380,7 +380,7 @@ impl Expand<'_> {
                     quote!(#i => <#ty as #toasty::Field>::reload(&mut self.#field_ident, value)?,)
                 }
                 _ => {
-                    quote!(#i => self.#field_ident.unload(),)
+                    quote!(#i => { self.#field_ident.unload(); })
                 }
             }
         });
