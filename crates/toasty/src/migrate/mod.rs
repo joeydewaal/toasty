@@ -32,9 +32,10 @@ impl Config {
             return Ok(Self::default());
         }
         let contents = std::fs::read_to_string(path).map_err(|e| {
-            Error::from_args(format_args!("failed to read {}: {e}", path.display()))
+            Error::migration_failed(format!("failed to read {}: {e}", path.display()))
         })?;
-        toml::from_str(&contents)
-            .map_err(|e| Error::from_args(format_args!("failed to parse {}: {e}", path.display())))
+        toml::from_str(&contents).map_err(|e| {
+            Error::migration_failed(format!("failed to parse {}: {e}", path.display()))
+        })
     }
 }

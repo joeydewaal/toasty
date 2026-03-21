@@ -10,6 +10,7 @@ mod invalid_result;
 mod invalid_schema;
 mod invalid_statement;
 mod invalid_type_conversion;
+mod migration_failed;
 mod read_only_transaction;
 mod record_not_found;
 mod serialization_failure;
@@ -29,6 +30,7 @@ use invalid_result::InvalidResult;
 use invalid_schema::InvalidSchema;
 use invalid_statement::InvalidStatement;
 use invalid_type_conversion::InvalidTypeConversion;
+use migration_failed::MigrationFailed;
 use read_only_transaction::ReadOnlyTransaction;
 use record_not_found::RecordNotFound;
 use serialization_failure::SerializationFailure;
@@ -69,6 +71,7 @@ enum ErrorKind {
     InvalidResult(InvalidResult),
     InvalidSchema(InvalidSchema),
     InvalidStatement(InvalidStatement),
+    MigrationFailed(MigrationFailed),
     ReadOnlyTransaction(ReadOnlyTransaction),
     SerializationFailure(SerializationFailure),
     TransactionTimeout(TransactionTimeout),
@@ -163,6 +166,7 @@ impl core::fmt::Display for ErrorKind {
             InvalidResult(err) => core::fmt::Display::fmt(err, f),
             InvalidSchema(err) => core::fmt::Display::fmt(err, f),
             InvalidStatement(err) => core::fmt::Display::fmt(err, f),
+            MigrationFailed(err) => core::fmt::Display::fmt(err, f),
             ReadOnlyTransaction(err) => core::fmt::Display::fmt(err, f),
             SerializationFailure(err) => core::fmt::Display::fmt(err, f),
             TransactionTimeout(err) => core::fmt::Display::fmt(err, f),

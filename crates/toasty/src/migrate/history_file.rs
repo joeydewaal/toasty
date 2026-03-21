@@ -44,20 +44,20 @@ impl HistoryFile {
     /// Load a history file from a TOML file
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let contents = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| Error::from_args(format_args!("{e}")))?;
+            .map_err(|e| Error::migration_failed(e.to_string()))?;
         contents.parse()
     }
 
     /// Save the history file to a TOML file
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         std::fs::write(path.as_ref(), self.to_string())
-            .map_err(|e| Error::from_args(format_args!("{e}")))?;
+            .map_err(|e| Error::migration_failed(e.to_string()))?;
         Ok(())
     }
 
     /// Loads the history file, or returns an empty one if it does not exist
     pub fn load_or_default(path: impl AsRef<Path>) -> Result<Self> {
-        if std::fs::exists(&path).map_err(|e| Error::from_args(format_args!("{e}")))? {
+        if std::fs::exists(&path).map_err(|e| Error::migration_failed(e.to_string()))? {
             return Self::load(path);
         }
         Ok(Self::default())
@@ -101,11 +101,11 @@ impl FromStr for HistoryFile {
 
     fn from_str(s: &str) -> Result<Self> {
         let file: HistoryFile =
-            toml::from_str(s).map_err(|e| Error::from_args(format_args!("{e}")))?;
+            toml::from_str(s).map_err(|e| Error::migration_failed(e.to_string()))?;
 
         // Validate version
         if file.version != HISTORY_FILE_VERSION {
-            return Err(Error::from_args(format_args!(
+            return Err(Error::migration_failed(format!(
                 "Unsupported history file version: {}. Expected version {}",
                 file.version, HISTORY_FILE_VERSION
             )));
