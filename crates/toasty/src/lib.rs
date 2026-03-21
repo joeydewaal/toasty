@@ -131,6 +131,11 @@ pub use stmt::Statement;
 mod transaction;
 pub use transaction::{Transaction, TransactionBuilder};
 
+#[cfg(feature = "migrate")]
+pub mod migrate;
+
+#[cfg(feature = "migrate")]
+pub use toasty_macros::migrate;
 pub use toasty_macros::{create, query, Embed, Model};
 
 pub use toasty_core::{Error, Result};

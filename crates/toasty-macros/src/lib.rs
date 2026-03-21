@@ -1,6 +1,8 @@
 extern crate proc_macro;
 
 mod create;
+#[cfg(feature = "migrate")]
+mod migrate;
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -694,6 +696,30 @@ pub fn derive_embed(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn include_schema(_input: TokenStream) -> TokenStream {
     todo!()
+}
+
+/// Reads `Toasty.toml` at compile time, embeds all migration SQL files listed
+/// in the history file into the binary, and returns a [`toasty::migrate::Migrator`]
+/// ready to apply pending migrations at runtime.
+///
+/// # Usage
+///
+/// ```ignore
+/// // Uses Toasty.toml in the crate root (CARGO_MANIFEST_DIR)
+/// toasty::migrate!().exec(&mut db).await?;
+///
+/// // Custom path to Toasty.toml
+/// toasty::migrate!("./config/Toasty.toml").exec(&mut db).await?;
+/// ```
+///
+/// Requires the `migrate` feature on the `toasty` crate.
+#[cfg(feature = "migrate")]
+#[proc_macro]
+pub fn migrate(input: TokenStream) -> TokenStream {
+    match migrate::expand(input.into()) {
+        Ok(output) => output.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 #[proc_macro]
