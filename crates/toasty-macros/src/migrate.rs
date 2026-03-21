@@ -4,30 +4,6 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Deserialize)]
-struct ToastyConfig {
-    #[serde(default)]
-    migration: MigrationConfig,
-}
-
-#[derive(Deserialize)]
-struct MigrationConfig {
-    #[serde(default = "default_migration_path")]
-    path: PathBuf,
-}
-
-fn default_migration_path() -> PathBuf {
-    PathBuf::from("toasty")
-}
-
-impl Default for MigrationConfig {
-    fn default() -> Self {
-        Self {
-            path: default_migration_path(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
 struct HistoryFile {
     #[serde(default)]
     migrations: Vec<HistoryEntry>,
@@ -63,7 +39,7 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         )
     })?;
 
-    let config: ToastyConfig = toml::from_str(&config_contents).map_err(|e| {
+    let config: toasty_core::migrate::Config = toml::from_str(&config_contents).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
             format!("failed to parse {}: {}", config_path.display(), e),

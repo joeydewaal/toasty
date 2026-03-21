@@ -14,12 +14,14 @@ rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 std-util.workspace = true
+toml = { workspace = true, optional = true }
 tokio-stream.workspace = true
 uuid.workspace = true
 
 [features]
 default = []
 assert-struct = ["dep:assert-struct"]
+migrate = ["serde", "dep:toml"]
 rust_decimal = ["dep:rust_decimal"]
 bigdecimal = ["dep:bigdecimal"]
 jiff = ["dep:jiff"]

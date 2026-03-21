@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-migrate = ["toasty-macros/migrate", "dep:serde", "dep:toml"]
+migrate = ["toasty-macros/migrate", "dep:serde", "dep:toml", "toasty-core/migrate"]
 dynamodb = ["dep:toasty-driver-dynamodb"]
 mysql = ["dep:toasty-driver-mysql"]
 postgresql = ["dep:toasty-driver-postgresql"]

@@ -15,4 +15,7 @@ pub mod stmt;
 /// A Result type alias that uses Toasty's [`Error`] type.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
+#[cfg(feature = "migrate")]
+pub mod migrate;
+
 pub use async_trait::async_trait;
