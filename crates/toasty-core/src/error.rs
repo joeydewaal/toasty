@@ -461,4 +461,32 @@ mod tests {
             "create user failed: read-only transaction: INSERT not allowed"
         );
     }
+
+    #[test]
+    fn migration_failed_display() {
+        let err = Error::migration_failed("config file not found");
+        assert_eq!(err.to_string(), "migration failed: config file not found");
+    }
+
+    #[test]
+    fn migration_failed_is_predicate() {
+        let err = Error::migration_failed("test");
+        assert!(err.is_migration_failed());
+    }
+
+    #[test]
+    fn migration_failed_predicate_false_for_other_errors() {
+        let err = Error::from_args(format_args!("some other error"));
+        assert!(!err.is_migration_failed());
+    }
+
+    #[test]
+    fn migration_failed_with_context() {
+        let err = Error::migration_failed("parse failed")
+            .context(Error::from_args(format_args!("loading config")));
+        assert_eq!(
+            err.to_string(),
+            "loading config: migration failed: parse failed"
+        );
+    }
 }

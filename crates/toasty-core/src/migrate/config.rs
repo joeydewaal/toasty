@@ -35,6 +35,7 @@ impl Config {
 
 /// Configuration for migration operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MigrationConfig {
     /// Path to the migrations folder
     pub path: PathBuf,
