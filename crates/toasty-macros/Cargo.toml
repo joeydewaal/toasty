@@ -8,7 +8,7 @@ publish = false
 proc-macro = true
 
 [features]
-migrate = ["toasty-core/migrate", "dep:serde", "dep:toml"]
+migrate = ["toasty-core/migrate"]
 
 [dependencies]
 toasty-core.workspace = true
@@ -17,8 +17,6 @@ toasty-codegen.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
-serde = { workspace = true, features = ["derive"], optional = true }
-toml = { workspace = true, optional = true }
 
 [lints]
 workspace = true
