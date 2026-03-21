@@ -1,4 +1,4 @@
-use super::{HistoryFile, HistoryFileMigration, SnapshotFile};
+use super::SnapshotFile;
 use crate::{Config, theme::dialoguer_theme};
 use anyhow::Result;
 use clap::Parser;
@@ -7,6 +7,7 @@ use dialoguer::Select;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use toasty::migrate::{HistoryFile, HistoryFileMigration};
 use toasty::{
     Db,
     schema::db::{

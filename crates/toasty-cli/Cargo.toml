@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-toasty.workspace = true
+toasty = { workspace = true, features = ["migrate"] }
 toasty-core = { workspace = true, features = ["serde"] }
 toasty-sql.workspace = true
 

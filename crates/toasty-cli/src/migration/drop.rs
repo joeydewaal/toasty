@@ -1,11 +1,10 @@
-use super::HistoryFile;
 use crate::{Config, theme::dialoguer_theme};
 use anyhow::Result;
 use clap::Parser;
 use console::style;
 use dialoguer::Select;
 use std::fs;
-use toasty::Db;
+use toasty::{Db, migrate::HistoryFile};
 
 #[derive(Parser, Debug)]
 pub struct DropCommand {

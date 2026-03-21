@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-migrate = ["toasty-macros/migrate"]
+migrate = ["toasty-macros/migrate", "dep:serde", "dep:toml"]
 dynamodb = ["dep:toasty-driver-dynamodb"]
 mysql = ["dep:toasty-driver-mysql"]
 postgresql = ["dep:toasty-driver-postgresql"]
@@ -42,6 +42,8 @@ toasty-driver-postgresql = { workspace = true, optional = true }
 toasty-driver-sqlite = { workspace = true, optional = true }
 serde_core = { version = "1.0.221", optional = true }
 serde_json = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 
 bit-set.workspace = true
 by_address.workspace = true

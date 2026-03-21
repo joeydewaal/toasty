@@ -1,11 +1,10 @@
-use super::HistoryFile;
-use crate::Config;
 use anyhow::Result;
 use clap::Parser;
 use console::style;
 use std::collections::HashSet;
 use std::fs;
 use toasty::Db;
+use toasty::migrate::{Config, HistoryFile};
 use toasty::schema::db::Migration;
 
 #[derive(Parser, Debug)]

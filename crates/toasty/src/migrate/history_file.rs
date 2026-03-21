@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
@@ -43,19 +43,21 @@ impl HistoryFile {
 
     /// Load a history file from a TOML file
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let contents = std::fs::read_to_string(path.as_ref())?;
+        let contents = std::fs::read_to_string(path.as_ref())
+            .map_err(|e| Error::from_args(format_args!("{e}")))?;
         contents.parse()
     }
 
     /// Save the history file to a TOML file
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
-        std::fs::write(path.as_ref(), self.to_string())?;
+        std::fs::write(path.as_ref(), self.to_string())
+            .map_err(|e| Error::from_args(format_args!("{e}")))?;
         Ok(())
     }
 
     /// Loads the history file, or returns an empty one if it does not exist
     pub fn load_or_default(path: impl AsRef<Path>) -> Result<Self> {
-        if std::fs::exists(&path)? {
+        if std::fs::exists(&path).map_err(|e| Error::from_args(format_args!("{e}")))? {
             return Self::load(path);
         }
         Ok(Self::default())
@@ -95,18 +97,18 @@ impl Default for HistoryFile {
 }
 
 impl FromStr for HistoryFile {
-    type Err = anyhow::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let file: HistoryFile = toml::from_str(s)?;
+        let file: HistoryFile =
+            toml::from_str(s).map_err(|e| Error::from_args(format_args!("{e}")))?;
 
         // Validate version
         if file.version != HISTORY_FILE_VERSION {
-            bail!(
+            return Err(Error::from_args(format_args!(
                 "Unsupported history file version: {}. Expected version {}",
-                file.version,
-                HISTORY_FILE_VERSION
-            );
+                file.version, HISTORY_FILE_VERSION
+            )));
         }
 
         Ok(file)

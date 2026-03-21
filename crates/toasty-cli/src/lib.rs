@@ -1,14 +1,14 @@
-mod config;
 mod migration;
 mod theme;
 mod utility;
 
-pub use config::*;
 pub use migration::*;
 
 use anyhow::Result;
 use clap::Parser;
 use toasty::Db;
+
+pub use toasty::migrate::Config;
 
 /// Toasty CLI library for building custom command-line tools
 pub struct ToastyCli {

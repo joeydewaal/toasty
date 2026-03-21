@@ -1,11 +1,10 @@
 use super::apply_migrations;
-use crate::Config;
 use crate::theme::dialoguer_theme;
 use anyhow::Result;
 use clap::Parser;
 use console::style;
 use dialoguer::Confirm;
-use toasty::Db;
+use toasty::{Db, migrate::Config};
 
 #[derive(Parser, Debug)]
 pub struct ResetCommand {
