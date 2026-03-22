@@ -3,14 +3,12 @@ mod drop;
 mod generate;
 mod reset;
 mod snapshot;
-mod snapshot_file;
 
 pub use apply::*;
 pub use drop::*;
 pub use generate::*;
 pub use reset::*;
 pub use snapshot::*;
-pub use snapshot_file::*;
 
 use anyhow::Result;
 use clap::Parser;

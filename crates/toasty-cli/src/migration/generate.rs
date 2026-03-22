@@ -1,4 +1,3 @@
-use super::SnapshotFile;
 use crate::{Config, theme::dialoguer_theme};
 use anyhow::Result;
 use clap::Parser;
@@ -14,6 +13,7 @@ use toasty::{
         SchemaDiff, TableId, TablesDiffItem,
     },
 };
+use toasty_core::migrate::SnapshotFile;
 use toasty_core::migrate::{HistoryFile, HistoryFileMigration};
 
 #[derive(Parser, Debug)]
