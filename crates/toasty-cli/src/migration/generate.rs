@@ -13,8 +13,7 @@ use toasty::{
         SchemaDiff, TableId, TablesDiffItem,
     },
 };
-use toasty_core::migrate::SnapshotFile;
-use toasty_core::migrate::{HistoryFile, HistoryFileMigration};
+use toasty_core::migrate::{HistoryFile, HistoryFileMigration, SnapshotFile};
 
 #[derive(Parser, Debug)]
 pub struct GenerateCommand {
