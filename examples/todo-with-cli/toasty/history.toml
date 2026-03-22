@@ -6,11 +6,11 @@ name = "migration"
 snapshot_name = "0000_snapshot.toml"
 
 [[migrations]]
-id = 4428999060268071558
+id = 5443575220053293842
 name = "add-todo-description"
 snapshot_name = "0001_snapshot.toml"
 
 [[migrations]]
-id = 835942339211763675
+id = 7580131618888154980
 name = "add-tags"
 snapshot_name = "0002_snapshot.toml"

@@ -19,5 +19,10 @@ toml.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
 url.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true }
+toasty = { workspace = true, features = ["sqlite"] }
+
 [lints]
 workspace = true

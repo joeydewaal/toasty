@@ -1,5 +1,7 @@
 mod apply;
 mod config;
+#[cfg(test)]
+mod tests;
 mod drop;
 mod generate;
 mod history_file;

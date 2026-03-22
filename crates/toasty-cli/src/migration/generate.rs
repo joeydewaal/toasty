@@ -19,7 +19,7 @@ use toasty::{
 pub struct GenerateCommand {
     /// Name for the migration
     #[arg(short, long)]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 /// Collects rename hints by interactively asking the user about potential renames.

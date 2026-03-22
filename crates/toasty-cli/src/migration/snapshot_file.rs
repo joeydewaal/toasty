@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 use toasty::schema::db::{ColumnId, IndexId, RenameHints, Schema, TableId};
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Value};
 
 const SNAPSHOT_FILE_VERSION: u32 = 1;
 
@@ -172,37 +172,86 @@ impl SnapshotFile {
     fn to_toml_document(&self) -> Result<DocumentMut> {
         let mut doc = toml_edit::ser::to_document(self)?;
         for (_key, item) in doc.as_table_mut().iter_mut() {
-            if item.is_inline_table() {
-                let mut placeholder = Item::None;
-                std::mem::swap(item, &mut placeholder);
-                let mut table = placeholder.into_table().unwrap();
+            expand_item(item, 1);
+        }
+        Ok(doc)
+    }
+}
 
-                for (_key, item) in table.iter_mut() {
-                    if item.is_array_of_tables() {
-                        let mut placeholder = Item::None;
-                        std::mem::swap(item, &mut placeholder);
-                        let mut array = placeholder.into_array_of_tables().unwrap();
+/// Recursively expands inline TOML structures into pretty array-of-tables format.
+///
+/// `toml_edit::ser::to_document` serializes all structs as inline tables and all
+/// `Vec<Struct>` as inline arrays. This function walks the tree and expands:
+///
+/// - Inline tables at depth 1 (e.g. the `[schema]` section) → `Table`
+/// - Inline arrays of inline tables at depth ≤ 3 → `[[array.of.tables]]`
+///
+/// This matches the expected snapshot format:
+///   `[[schema.tables]]`, `[[schema.tables.columns]]`, `[[schema.tables.indices]]`
+///
+/// Deeper structures (e.g. `id = { table = 0, index = 0 }`) stay inline.
+fn expand_item(item: &mut Item, depth: usize) {
+    // Expand top-level inline tables (e.g. `schema = { ... }`) into `[schema]` sections.
+    if depth == 1 && matches!(item, Item::Value(Value::InlineTable(_))) {
+        let mut placeholder = Item::None;
+        std::mem::swap(item, &mut placeholder);
+        if let Item::Value(Value::InlineTable(t)) = placeholder {
+            let mut table = t.into_table();
+            for (_, child) in table.iter_mut() {
+                expand_item(child, depth + 1);
+            }
+            *item = Item::Table(table);
+        }
+        return;
+    }
 
-                        for table in array.iter_mut() {
-                            for (_key, item) in table.iter_mut() {
-                                if item.is_array_of_tables() {
-                                    let mut placeholder = Item::None;
-                                    std::mem::swap(item, &mut placeholder);
-                                    let array = placeholder.into_array_of_tables().unwrap();
-                                    *item = array.into();
-                                }
-                            }
-                        }
+    // Expand inline arrays of inline tables into `[[array.of.tables]]` sections.
+    if depth <= 3 {
+        let should_expand = matches!(item, Item::Value(Value::Array(_))) && {
+            if let Item::Value(Value::Array(arr)) = &*item {
+                !arr.is_empty() && arr.iter().all(|v| matches!(v, Value::InlineTable(_)))
+            } else {
+                false
+            }
+        };
 
-                        *item = array.into();
+        if should_expand {
+            let values: Vec<Value> = if let Item::Value(Value::Array(arr)) = &*item {
+                arr.iter().cloned().collect()
+            } else {
+                vec![]
+            };
+
+            let mut aot = ArrayOfTables::new();
+            for val in values {
+                if let Value::InlineTable(t) = val {
+                    let mut table = t.into_table();
+                    for (_, child) in table.iter_mut() {
+                        expand_item(child, depth + 1);
                     }
+                    aot.push(table);
                 }
+            }
+            *item = Item::ArrayOfTables(aot);
+            return;
+        }
+    }
 
-                *item = table.into();
+    // Recurse into already-expanded structures.
+    match item {
+        Item::Table(t) => {
+            for (_, child) in t.iter_mut() {
+                expand_item(child, depth + 1);
             }
         }
-
-        Ok(doc)
+        Item::ArrayOfTables(aot) => {
+            for table in aot.iter_mut() {
+                for (_, child) in table.iter_mut() {
+                    expand_item(child, depth + 1);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

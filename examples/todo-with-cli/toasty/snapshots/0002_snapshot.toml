@@ -1,4 +1,181 @@
 version = 1
 
 [schema]
-tables = [{ id = 0, name = "users", columns = [{ id = { table = 0, index = 0 }, name = "id", ty = "Bytes", storage_ty = "Blob", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 0, index = 1 }, name = "name", ty = "String", storage_ty = "Text", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 0, index = 2 }, name = "email", ty = "String", storage_ty = "Text", nullable = false, primary_key = false, auto_increment = false }], primary_key = { columns = [{ table = 0, index = 0 }], index = { table = 0, index = 0 } }, indices = [{ id = { table = 0, index = 0 }, name = "index_users_by_id", on = 0, columns = [{ column = { table = 0, index = 0 }, op = "Eq", scope = "Partition" }], unique = true, primary_key = true }, { id = { table = 0, index = 1 }, name = "index_users_by_email", on = 0, columns = [{ column = { table = 0, index = 2 }, op = "Eq", scope = "Partition" }], unique = true, primary_key = false }] }, { id = 1, name = "todos", columns = [{ id = { table = 1, index = 0 }, name = "id", ty = "Bytes", storage_ty = "Blob", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 1, index = 1 }, name = "user_id", ty = "Bytes", storage_ty = "Blob", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 1, index = 2 }, name = "title", ty = "String", storage_ty = "Text", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 1, index = 3 }, name = "description", ty = "String", storage_ty = "Text", nullable = true, primary_key = false, auto_increment = false }, { id = { table = 1, index = 4 }, name = "completed", ty = "Bool", storage_ty = "Boolean", nullable = false, primary_key = false, auto_increment = false }], primary_key = { columns = [{ table = 1, index = 0 }], index = { table = 1, index = 0 } }, indices = [{ id = { table = 1, index = 0 }, name = "index_todos_by_id", on = 1, columns = [{ column = { table = 1, index = 0 }, op = "Eq", scope = "Partition" }], unique = true, primary_key = true }, { id = { table = 1, index = 1 }, name = "index_todos_by_user_id", on = 1, columns = [{ column = { table = 1, index = 1 }, op = "Eq", scope = "Partition" }], unique = false, primary_key = false }, { id = { table = 1, index = 2 }, name = "index_todos_by_title", on = 1, columns = [{ column = { table = 1, index = 2 }, op = "Eq", scope = "Partition" }], unique = false, primary_key = false }] }, { id = 2, name = "tags", columns = [{ id = { table = 2, index = 0 }, name = "id", ty = "Bytes", storage_ty = "Blob", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 2, index = 1 }, name = "todo_id", ty = "Bytes", storage_ty = "Blob", nullable = false, primary_key = false, auto_increment = false }, { id = { table = 2, index = 2 }, name = "name", ty = "String", storage_ty = "Text", nullable = false, primary_key = false, auto_increment = false }], primary_key = { columns = [{ table = 2, index = 0 }], index = { table = 2, index = 0 } }, indices = [{ id = { table = 2, index = 0 }, name = "index_tags_by_id", on = 2, columns = [{ column = { table = 2, index = 0 }, op = "Eq", scope = "Partition" }], unique = true, primary_key = true }, { id = { table = 2, index = 1 }, name = "index_tags_by_todo_id", on = 2, columns = [{ column = { table = 2, index = 1 }, op = "Eq", scope = "Partition" }], unique = false, primary_key = false }, { id = { table = 2, index = 2 }, name = "index_tags_by_name", on = 2, columns = [{ column = { table = 2, index = 2 }, op = "Eq", scope = "Partition" }], unique = false, primary_key = false }] }]
+
+[[schema.tables]]
+id = 0
+name = "users"
+primary_key = { columns = [{ table = 0, index = 0 }], index = { table = 0, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 0, index = 0 }
+name = "id"
+ty = "Bytes"
+storage_ty = "Blob"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 0, index = 1 }
+name = "name"
+ty = "String"
+storage_ty = "Text"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 0, index = 2 }
+name = "email"
+ty = "String"
+storage_ty = "Text"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.indices]]
+id = { table = 0, index = 0 }
+name = "index_users_by_id"
+on = 0
+columns = [{ column = { table = 0, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 0, index = 1 }
+name = "index_users_by_email"
+on = 0
+columns = [{ column = { table = 0, index = 2 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = false
+
+[[schema.tables]]
+id = 1
+name = "todos"
+primary_key = { columns = [{ table = 1, index = 0 }], index = { table = 1, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 0 }
+name = "id"
+ty = "Bytes"
+storage_ty = "Blob"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 1, index = 1 }
+name = "user_id"
+ty = "Bytes"
+storage_ty = "Blob"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 1, index = 2 }
+name = "title"
+ty = "String"
+storage_ty = "Text"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 1, index = 3 }
+name = "description"
+ty = "String"
+storage_ty = "Text"
+nullable = true
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 1, index = 4 }
+name = "completed"
+ty = "Bool"
+storage_ty = "Boolean"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.indices]]
+id = { table = 1, index = 0 }
+name = "index_todos_by_id"
+on = 1
+columns = [{ column = { table = 1, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 1, index = 1 }
+name = "index_todos_by_user_id"
+on = 1
+columns = [{ column = { table = 1, index = 1 }, op = "Eq", scope = "Partition" }]
+unique = false
+primary_key = false
+
+[[schema.tables.indices]]
+id = { table = 1, index = 2 }
+name = "index_todos_by_title"
+on = 1
+columns = [{ column = { table = 1, index = 2 }, op = "Eq", scope = "Partition" }]
+unique = false
+primary_key = false
+
+[[schema.tables]]
+id = 2
+name = "tags"
+primary_key = { columns = [{ table = 2, index = 0 }], index = { table = 2, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 0 }
+name = "id"
+ty = "Bytes"
+storage_ty = "Blob"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 2, index = 1 }
+name = "todo_id"
+ty = "Bytes"
+storage_ty = "Blob"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.columns]]
+id = { table = 2, index = 2 }
+name = "name"
+ty = "String"
+storage_ty = "Text"
+nullable = false
+primary_key = false
+auto_increment = false
+
+[[schema.tables.indices]]
+id = { table = 2, index = 0 }
+name = "index_tags_by_id"
+on = 2
+columns = [{ column = { table = 2, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 2, index = 1 }
+name = "index_tags_by_todo_id"
+on = 2
+columns = [{ column = { table = 2, index = 1 }, op = "Eq", scope = "Partition" }]
+unique = false
+primary_key = false
+
+[[schema.tables.indices]]
+id = { table = 2, index = 2 }
+name = "index_tags_by_name"
+on = 2
+columns = [{ column = { table = 2, index = 2 }, op = "Eq", scope = "Partition" }]
+unique = false
+primary_key = false
