@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use toasty::Db;
 
-pub use toasty::migrate::Config;
+pub use toasty_core::migrate::Config;
 
 /// Toasty CLI library for building custom command-line tools
 pub struct ToastyCli {

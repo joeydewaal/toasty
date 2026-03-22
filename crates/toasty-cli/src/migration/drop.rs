@@ -4,7 +4,8 @@ use clap::Parser;
 use console::style;
 use dialoguer::Select;
 use std::fs;
-use toasty::{Db, migrate::HistoryFile};
+use toasty::Db;
+use toasty_core::migrate::HistoryFile;
 
 #[derive(Parser, Debug)]
 pub struct DropCommand {

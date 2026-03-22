@@ -7,7 +7,6 @@ use dialoguer::Select;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use toasty::migrate::{HistoryFile, HistoryFileMigration};
 use toasty::{
     Db,
     schema::db::{
@@ -15,6 +14,7 @@ use toasty::{
         SchemaDiff, TableId, TablesDiffItem,
     },
 };
+use toasty_core::migrate::{HistoryFile, HistoryFileMigration};
 
 #[derive(Parser, Debug)]
 pub struct GenerateCommand {

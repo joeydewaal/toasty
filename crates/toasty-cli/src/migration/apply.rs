@@ -4,8 +4,8 @@ use console::style;
 use std::collections::HashSet;
 use std::fs;
 use toasty::Db;
-use toasty::migrate::{Config, HistoryFile};
 use toasty::schema::db::Migration;
+use toasty_core::migrate::{Config, HistoryFile};
 
 #[derive(Parser, Debug)]
 pub struct ApplyCommand {}

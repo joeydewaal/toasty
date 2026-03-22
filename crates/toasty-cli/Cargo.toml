@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 toasty = { workspace = true, features = ["migrate"] }
-toasty-core = { workspace = true, features = ["serde"] }
+toasty-core = { workspace = true, features = ["serde", "migrate"] }
 toasty-sql.workspace = true
 
 anyhow = "1.0.100"

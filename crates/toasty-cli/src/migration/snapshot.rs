@@ -2,7 +2,8 @@ use super::SnapshotFile;
 use anyhow::Result;
 use clap::Parser;
 use console::style;
-use toasty::{Db, migrate::Config};
+use toasty::Db;
+use toasty_core::migrate::Config;
 
 #[derive(Parser, Debug)]
 pub struct SnapshotCommand {
