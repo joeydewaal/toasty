@@ -87,6 +87,11 @@ pub struct Capability {
     /// DynamoDB: false. All other backends: true (SQL backends never use index key conditions).
     pub index_or_predicate: bool,
 
+    /// Whether the database driver supports migrations (`apply_migration` /
+    /// `applied_migrations`). DynamoDB panics on both methods; all SQL drivers
+    /// support them.
+    pub migrations: bool,
+
     /// Whether to test connection pool behavior.
     /// TODO: We only need this for the `connection_per_clone.rs` test, come up with a better way.
     pub test_connection_pool: bool,
@@ -272,6 +277,8 @@ impl Capability {
 
         index_or_predicate: true,
 
+        migrations: true,
+
         test_connection_pool: false,
     };
 
@@ -348,6 +355,8 @@ impl Capability {
         decimal_arbitrary_precision: false,
 
         index_or_predicate: false,
+
+        migrations: false,
 
         test_connection_pool: false,
     };

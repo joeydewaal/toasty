@@ -34,6 +34,7 @@ pub mod has_many_n_1;
 pub mod has_many_scoped_query;
 pub mod has_one_crud_basic;
 pub mod jiff;
+pub mod migration;
 pub mod missing_registrations;
 pub mod one_model_batch_create;
 pub mod one_model_composite_key;
