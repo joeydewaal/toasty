@@ -130,7 +130,7 @@ mod tests {
         history.add_migration(HistoryFileMigration {
             id: 42,
             name: "migration".to_string(),
-            snapshot_name: "0000_migration_snapshot.toml".to_string(),
+            snapshot_name: "0000_snapshot.toml".to_string(),
             checksum: None,
         });
 
@@ -140,10 +140,7 @@ mod tests {
         assert_eq!(parsed.migrations().len(), 1);
         assert_eq!(parsed.migrations()[0].id, 42);
         assert_eq!(parsed.migrations()[0].name, "migration");
-        assert_eq!(
-            parsed.migrations()[0].snapshot_name,
-            "0000_migration_snapshot.toml"
-        );
+        assert_eq!(parsed.migrations()[0].snapshot_name, "0000_snapshot.toml");
         assert!(parsed.migrations()[0].checksum.is_none());
     }
 
@@ -159,7 +156,7 @@ mod tests {
         history.add_migration(HistoryFileMigration {
             id: 1,
             name: "migration".to_string(),
-            snapshot_name: "0000_migration_snapshot.toml".to_string(),
+            snapshot_name: "0000_snapshot.toml".to_string(),
             checksum: None,
         });
         assert_eq!(history.next_migration_number(), 1);
@@ -167,7 +164,7 @@ mod tests {
         history.add_migration(HistoryFileMigration {
             id: 2,
             name: "migration".to_string(),
-            snapshot_name: "0001_migration_snapshot.toml".to_string(),
+            snapshot_name: "0001_snapshot.toml".to_string(),
             checksum: None,
         });
         assert_eq!(history.next_migration_number(), 2);

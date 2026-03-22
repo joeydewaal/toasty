@@ -3,4 +3,4 @@ version = 1
 [[migrations]]
 id = 1101269131896407524
 name = "migration"
-snapshot_name = "0000_migration_snapshot.toml"
+snapshot_name = "0000_snapshot.toml"

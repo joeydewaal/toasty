@@ -286,7 +286,7 @@ impl GenerateCommand {
 
         let migration_number = history.next_migration_number();
         let migration_name = self.name.as_deref().unwrap_or("migration").to_string();
-        let snapshot_name = format!("{:04}_{}_snapshot.toml", migration_number, migration_name);
+        let snapshot_name = format!("{:04}_snapshot.toml", migration_number);
         let snapshot_path = config.migration.get_snapshots_dir().join(&snapshot_name);
 
         let snapshot = if stored_hints.is_empty() {
