@@ -65,16 +65,16 @@ impl HistoryFile {
         &self.migrations
     }
 
-    /// Get the next migration number by parsing the last migration's name
+    /// Get the next migration number by parsing the last migration's snapshot name
     pub fn next_migration_number(&self) -> u32 {
         self.migrations
             .last()
             .and_then(|m| {
-                // Extract the first 4 digits from the migration name (e.g., "0001_migration.sql" -> 1)
-                m.name.split('_').next()?.parse::<u32>().ok()
+                // Extract the first 4 digits from the snapshot name (e.g., "0001_snapshot.toml" -> 1)
+                m.snapshot_name.split('_').next()?.parse::<u32>().ok()
             })
             .map(|n| n + 1)
-            .unwrap_or(0)
+            .unwrap_or(1)
     }
 
     /// Add a migration to the history
@@ -117,5 +117,36 @@ impl fmt::Display for HistoryFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let toml_str = toml::to_string_pretty(self).map_err(|_| fmt::Error)?;
         write!(f, "{}", toml_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_migration_number_empty() {
+        let history = HistoryFile::new();
+        assert_eq!(history.next_migration_number(), 1);
+    }
+
+    #[test]
+    fn next_migration_number_increments() {
+        let mut history = HistoryFile::new();
+        history.add_migration(HistoryFileMigration {
+            id: 1,
+            name: "migration".to_string(),
+            snapshot_name: "0001_snapshot.toml".to_string(),
+            checksum: None,
+        });
+        assert_eq!(history.next_migration_number(), 2);
+
+        history.add_migration(HistoryFileMigration {
+            id: 2,
+            name: "migration".to_string(),
+            snapshot_name: "0002_snapshot.toml".to_string(),
+            checksum: None,
+        });
+        assert_eq!(history.next_migration_number(), 3);
     }
 }
