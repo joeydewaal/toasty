@@ -1,0 +1,7 @@
+error: Toasty.toml not found at `$WORKSPACE/target/tests/trybuild/tests/nonexistent/path/Toasty.toml`
+ --> tests/ui/migrate_missing_toasty_toml.rs:2:13
+  |
+2 |     let _ = toasty::migrate!("nonexistent/path/Toasty.toml");
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `toasty::migrate` (in Nightly builds, run with -Z macro-backtrace for more info)
