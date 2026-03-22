@@ -4,3 +4,13 @@ version = 1
 id = 1101269131896407524
 name = "migration"
 snapshot_name = "0000_snapshot.toml"
+
+[[migrations]]
+id = 4428999060268071558
+name = "add-todo-description"
+snapshot_name = "0001_snapshot.toml"
+
+[[migrations]]
+id = 835942339211763675
+name = "add-tags"
+snapshot_name = "0002_snapshot.toml"

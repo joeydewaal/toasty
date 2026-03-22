@@ -28,7 +28,28 @@ pub struct Todo {
     #[index]
     pub title: String,
 
+    pub description: Option<String>,
+
     pub completed: bool,
+
+    #[has_many]
+    pub tags: toasty::HasMany<Tag>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Tag {
+    #[key]
+    #[auto]
+    pub id: uuid::Uuid,
+
+    #[index]
+    pub todo_id: uuid::Uuid,
+
+    #[belongs_to(key = todo_id, references = id)]
+    pub todo: toasty::BelongsTo<Todo>,
+
+    #[index]
+    pub name: String,
 }
 
 /// Helper function to create a database instance with the schema
@@ -36,6 +57,7 @@ pub async fn create_db() -> toasty::Result<toasty::Db> {
     let db = toasty::Db::builder()
         .register::<User>()
         .register::<Todo>()
+        .register::<Tag>()
         .connect("sqlite:./test.db")
         .await?;
 
