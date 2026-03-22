@@ -92,7 +92,7 @@ impl Driver for MySQL {
             })
             .collect();
 
-        Migration::new_sql_with_breakpoints(&sql_strings)
+        Migration::new_sql(sql_strings)
     }
 
     async fn reset_db(&self) -> toasty_core::Result<()> {

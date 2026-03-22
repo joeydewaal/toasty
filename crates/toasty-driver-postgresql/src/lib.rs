@@ -109,7 +109,7 @@ impl Driver for PostgreSQL {
             })
             .collect();
 
-        Migration::new_sql(sql_strings.join("\n"))
+        Migration::new_sql(sql_strings)
     }
 
     async fn reset_db(&self) -> toasty_core::Result<()> {

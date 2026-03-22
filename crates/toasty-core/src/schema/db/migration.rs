@@ -1,43 +1,30 @@
 /// A database migration generated from a [`SchemaDiff`](super::SchemaDiff) by a driver.
 ///
-/// Currently only SQL migrations are supported. Multiple SQL statements
-/// within a single migration are separated by breakpoint markers
-/// (`-- #[toasty::breakpoint]`).
+/// Currently only SQL migrations are supported.
 ///
 /// # Examples
 ///
 /// ```ignore
 /// use toasty_core::schema::db::Migration;
 ///
-/// let m = Migration::new_sql("CREATE TABLE users (id INTEGER PRIMARY KEY)".to_string());
-/// assert_eq!(m.statements(), vec!["CREATE TABLE users (id INTEGER PRIMARY KEY)"]);
+/// let m = Migration::new_sql(vec!["CREATE TABLE users (id INTEGER PRIMARY KEY)".to_string()]);
+/// assert_eq!(m.statements(), &["CREATE TABLE users (id INTEGER PRIMARY KEY)"]);
 /// ```
 pub enum Migration {
     /// A SQL migration containing one or more statements.
-    Sql(String),
+    Sql(Vec<String>),
 }
 
 impl Migration {
-    /// Creates a SQL migration from a single SQL string.
-    pub fn new_sql(sql: String) -> Self {
-        Migration::Sql(sql)
+    /// Creates a SQL migration from a list of SQL statements.
+    pub fn new_sql(statements: Vec<String>) -> Self {
+        Migration::Sql(statements)
     }
 
-    /// Creates a SQL migration from multiple SQL statements.
-    /// Statements are joined with `-- #[toasty::breakpoint]` markers.
-    pub fn new_sql_with_breakpoints<S: AsRef<str>>(statements: &[S]) -> Self {
-        let sql = statements
-            .iter()
-            .map(|s| s.as_ref())
-            .collect::<Vec<_>>()
-            .join("\n-- #[toasty::breakpoint]\n");
-        Migration::Sql(sql)
-    }
-
-    /// Returns individual SQL statements by splitting on breakpoint markers.
-    pub fn statements(&self) -> Vec<&str> {
+    /// Returns the individual SQL statements in this migration.
+    pub fn statements(&self) -> &[String] {
         match self {
-            Migration::Sql(sql) => sql.split("\n-- #[toasty::breakpoint]\n").collect(),
+            Migration::Sql(stmts) => stmts,
         }
     }
 }
