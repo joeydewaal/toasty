@@ -1,12 +1,11 @@
-use super::HistoryFile;
+use super::{HistoryFile, SnapshotFile};
 use crate::Config;
 use anyhow::Result;
 use clap::Parser;
 use console::style;
 use std::collections::HashSet;
-use std::fs;
 use toasty::Db;
-use toasty::schema::db::Migration;
+use toasty::schema::db::{RenameHints, Schema, SchemaDiff};
 
 #[derive(Parser, Debug)]
 pub struct ApplyCommand {}
@@ -55,13 +54,15 @@ pub(crate) async fn apply_migrations(db: &Db, config: &Config) -> Result<()> {
     let applied_ids: HashSet<u64> = applied_migrations.iter().map(|m| m.id()).collect();
 
     // Find migrations that haven't been applied yet
-    let pending_migrations: Vec<_> = history
+    let pending_indices: Vec<usize> = history
         .migrations()
         .iter()
-        .filter(|m| !applied_ids.contains(&m.id))
+        .enumerate()
+        .filter(|(_, m)| !applied_ids.contains(&m.id))
+        .map(|(i, _)| i)
         .collect();
 
-    if pending_migrations.is_empty() {
+    if pending_indices.is_empty() {
         println!(
             "  {}",
             style("All migrations are already applied. Database is up to date.")
@@ -72,7 +73,7 @@ pub(crate) async fn apply_migrations(db: &Db, config: &Config) -> Result<()> {
         return Ok(());
     }
 
-    let pending_count = pending_migrations.len();
+    let pending_count = pending_indices.len();
     println!(
         "  {} Found {} pending migration(s) to apply",
         style("→").cyan(),
@@ -81,30 +82,54 @@ pub(crate) async fn apply_migrations(db: &Db, config: &Config) -> Result<()> {
     println!();
 
     // Apply each pending migration
-    for migration_entry in &pending_migrations {
-        let migration_path = config
+    for idx in &pending_indices {
+        let migration_entry = &history.migrations()[*idx];
+
+        // Load the snapshot for this migration
+        let snapshot_path = config
             .migration
-            .get_migrations_dir()
-            .join(&migration_entry.name);
+            .get_snapshots_dir()
+            .join(&migration_entry.snapshot_name);
+        let snapshot = SnapshotFile::load(&snapshot_path)?;
+
+        // Load the previous snapshot's schema (or start from empty)
+        let prev_schema = if *idx == 0 {
+            Schema::default()
+        } else {
+            let prev_entry = &history.migrations()[idx - 1];
+            let prev_path = config
+                .migration
+                .get_snapshots_dir()
+                .join(&prev_entry.snapshot_name);
+            SnapshotFile::load(&prev_path)?.schema
+        };
+
+        // Reconstruct the diff using stored rename hints and generate SQL for this driver
+        let hints = snapshot
+            .rename_hints
+            .map(|h| h.into_rename_hints())
+            .unwrap_or_else(RenameHints::new);
+        let diff = SchemaDiff::from(&prev_schema, &snapshot.schema, &hints);
+        let migration = db.driver().generate_migration(&diff);
 
         println!(
             "  {} Applying migration: {}",
             style("→").cyan(),
-            style(&migration_entry.name).bold()
+            style(&migration_entry.snapshot_name).bold()
         );
 
-        // Load the migration SQL file
-        let sql = fs::read_to_string(&migration_path)?;
-        let migration = Migration::new_sql(sql);
-
         // Apply the migration
-        conn.apply_migration(migration_entry.id, migration_entry.name.clone(), &migration)
-            .await?;
+        conn.apply_migration(
+            migration_entry.id,
+            migration_entry.snapshot_name.clone(),
+            &migration,
+        )
+        .await?;
 
         println!(
             "  {} {}",
             style("✓").green().bold(),
-            style(format!("Applied: {}", migration_entry.name)).dim()
+            style(format!("Applied: {}", migration_entry.snapshot_name)).dim()
         );
     }
 

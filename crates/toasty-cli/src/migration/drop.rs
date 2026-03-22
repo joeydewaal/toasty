@@ -9,7 +9,7 @@ use toasty::Db;
 
 #[derive(Parser, Debug)]
 pub struct DropCommand {
-    /// Name of the migration to drop (if not provided, will prompt)
+    /// Snapshot name of the migration to drop (if not provided, will prompt)
     #[arg(short, long)]
     name: Option<String>,
 
@@ -33,11 +33,11 @@ impl DropCommand {
             // Drop the latest migration
             history.migrations().len() - 1
         } else if let Some(name) = &self.name {
-            // Find migration by name
+            // Find migration by snapshot name
             history
                 .migrations()
                 .iter()
-                .position(|m| m.name == *name)
+                .position(|m| m.snapshot_name == *name)
                 .ok_or_else(|| anyhow::anyhow!("Migration '{}' not found", name))?
         } else {
             // Interactive picker with fancy theme
@@ -48,7 +48,7 @@ impl DropCommand {
             let migration_display: Vec<String> = history
                 .migrations()
                 .iter()
-                .map(|m| format!("  {}", m.name))
+                .map(|m| format!("  {}", m.snapshot_name))
                 .collect();
 
             Select::with_theme(&dialoguer_theme())
@@ -61,27 +61,7 @@ impl DropCommand {
         println!();
 
         let migration = &history.migrations()[migration_index];
-        let migration_name = migration.name.clone();
         let snapshot_name = migration.snapshot_name.clone();
-
-        // Delete migration file
-        let migration_path = config.migration.get_migrations_dir().join(&migration_name);
-        if migration_path.exists() {
-            fs::remove_file(&migration_path)?;
-            println!(
-                "  {} {}",
-                style("✓").green().bold(),
-                style(format!("Deleted migration: {}", migration_name)).dim()
-            );
-        } else {
-            println!(
-                "  {} {}",
-                style("⚠").yellow().bold(),
-                style(format!("Migration file not found: {}", migration_name))
-                    .yellow()
-                    .dim()
-            );
-        }
 
         // Delete snapshot file
         let snapshot_path = config.migration.get_snapshots_dir().join(&snapshot_name);
@@ -117,7 +97,7 @@ impl DropCommand {
             style("").magenta(),
             style(format!(
                 "Migration '{}' successfully dropped",
-                migration_name
+                snapshot_name
             ))
             .green()
             .bold()

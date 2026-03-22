@@ -1,4 +1,4 @@
-use super::{HistoryFile, HistoryFileMigration, SnapshotFile};
+use super::{HistoryFile, HistoryFileMigration, SnapshotFile, StoredRenameHints};
 use crate::{Config, theme::dialoguer_theme};
 use anyhow::Result;
 use clap::Parser;
@@ -10,8 +10,8 @@ use std::fs;
 use toasty::{
     Db,
     schema::db::{
-        ColumnId, ColumnsDiffItem, IndexId, IndicesDiffItem, Migration, RenameHints, Schema,
-        SchemaDiff, TableId, TablesDiffItem,
+        ColumnId, ColumnsDiffItem, IndexId, IndicesDiffItem, RenameHints, Schema, SchemaDiff,
+        TableId, TablesDiffItem,
     },
 };
 
@@ -22,9 +22,17 @@ pub struct GenerateCommand {
     name: Option<String>,
 }
 
-/// Collects rename hints by interactively asking the user about potential renames
-fn collect_rename_hints(previous_schema: &Schema, schema: &Schema) -> Result<RenameHints> {
+/// Collects rename hints by interactively asking the user about potential renames.
+///
+/// Returns both the in-memory [`RenameHints`] (used for diff computation) and the
+/// [`StoredRenameHints`] (persisted in the snapshot file so SQL can be re-generated
+/// later for any database backend).
+fn collect_rename_hints(
+    previous_schema: &Schema,
+    schema: &Schema,
+) -> Result<(RenameHints, StoredRenameHints)> {
     let mut hints = RenameHints::default();
+    let mut stored = StoredRenameHints::default();
     let mut ignored_tables = HashSet::<TableId>::new();
     let mut ignored_columns = HashMap::<TableId, HashSet<ColumnId>>::new();
     let mut ignored_indices = HashMap::<TableId, HashSet<IndexId>>::new();
@@ -77,6 +85,10 @@ fn collect_rename_hints(previous_schema: &Schema, schema: &Schema) -> Result<Ren
                     // User indicated a rename (selection - 1 maps to added_tables index)
                     let to_table = added_tables[selection - 1];
                     drop(diff);
+                    stored.tables.push(super::StoredTableRename {
+                        from: dropped_table.id.0,
+                        to: to_table.id.0,
+                    });
                     hints.add_table_hint(dropped_table.id, to_table.id);
                     continue 'main; // Regenerate diff with new hint
                 }
@@ -144,6 +156,12 @@ fn collect_rename_hints(previous_schema: &Schema, schema: &Schema) -> Result<Ren
                             // User indicated a rename
                             let next_column = added_columns[selection - 1];
                             drop(diff);
+                            stored.columns.push(super::StoredColumnRename {
+                                from_table: dropped_column.id.table.0,
+                                from_col: dropped_column.id.index,
+                                to_table: next_column.id.table.0,
+                                to_col: next_column.id.index,
+                            });
                             hints.add_column_hint(dropped_column.id, next_column.id);
                             continue 'main; // Regenerate diff with new hint
                         }
@@ -202,6 +220,12 @@ fn collect_rename_hints(previous_schema: &Schema, schema: &Schema) -> Result<Ren
                             // User indicated a rename
                             let to_index = added_indices[selection - 1];
                             drop(diff);
+                            stored.indices.push(super::StoredIndexRename {
+                                from_table: dropped_index.id.table.0,
+                                from_idx: dropped_index.id.index,
+                                to_table: to_index.id.table.0,
+                                to_idx: to_index.id.index,
+                            });
                             hints.add_index_hint(dropped_index.id, to_index.id);
                             continue 'main; // Regenerate diff with new hint
                         }
@@ -214,7 +238,7 @@ fn collect_rename_hints(previous_schema: &Schema, schema: &Schema) -> Result<Ren
         break;
     }
 
-    Ok(hints)
+    Ok((hints, stored))
 }
 
 impl GenerateCommand {
@@ -228,7 +252,6 @@ impl GenerateCommand {
 
         let history_path = config.migration.get_history_file_path();
 
-        fs::create_dir_all(config.migration.get_migrations_dir())?;
         fs::create_dir_all(config.migration.get_snapshots_dir())?;
         fs::create_dir_all(history_path.parent().unwrap())?;
 
@@ -247,7 +270,7 @@ impl GenerateCommand {
 
         let schema = toasty::schema::db::Schema::clone(&db.schema().db);
 
-        let rename_hints = collect_rename_hints(&previous_schema, &schema)?;
+        let (rename_hints, stored_hints) = collect_rename_hints(&previous_schema, &schema)?;
         let diff = SchemaDiff::from(&previous_schema, &schema, &rename_hints);
 
         if diff.is_empty() {
@@ -261,35 +284,24 @@ impl GenerateCommand {
             return Ok(());
         }
 
-        let snapshot = SnapshotFile::new(schema.clone());
         let migration_number = history.next_migration_number();
-        let snapshot_name = format!("{:04}_snapshot.toml", migration_number);
+        let migration_name = self.name.as_deref().unwrap_or("migration").to_string();
+        let snapshot_name = format!("{:04}_{}_snapshot.toml", migration_number, migration_name);
         let snapshot_path = config.migration.get_snapshots_dir().join(&snapshot_name);
 
-        let migration_name = format!(
-            "{:04}_{}.sql",
-            migration_number,
-            self.name.as_deref().unwrap_or("migration")
-        );
-        let migration_path = config.migration.get_migrations_dir().join(&migration_name);
-
-        let migration = db.driver().generate_migration(&diff);
+        let snapshot = if stored_hints.is_empty() {
+            SnapshotFile::new(schema.clone())
+        } else {
+            SnapshotFile::with_rename_hints(schema.clone(), stored_hints)
+        };
 
         history.add_migration(HistoryFileMigration {
-            // Some databases only supported signed 64-bit integers.
+            // Some databases only support signed 64-bit integers.
             id: rand::thread_rng().gen_range(0..i64::MAX) as u64,
             name: migration_name.clone(),
             snapshot_name: snapshot_name.clone(),
             checksum: None,
         });
-
-        let Migration::Sql(sql) = migration;
-        std::fs::write(migration_path, sql)?;
-        println!(
-            "  {} {}",
-            style("✓").green().bold(),
-            style(format!("Created migration file: {}", migration_name)).dim()
-        );
 
         snapshot.save(&snapshot_path)?;
         println!(
