@@ -1,6 +1,7 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 use std::path::PathBuf;
+use toasty_core::migrate::{Config, HistoryFile};
 
 pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
     let config_path_override: Option<syn::LitStr> = if input.is_empty() {
@@ -26,7 +27,7 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         ));
     }
 
-    let config = toasty_core::migrate::Config::load_or_default(&config_path)
+    let config = Config::from_path(&config_path)
         .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), e.to_string()))?;
 
     let migration_base = if config.migration.path.is_absolute() {
@@ -38,7 +39,7 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
     let history_path = migration_base.join("history.toml");
     let migrations_dir = migration_base.join("migrations");
 
-    let history = toasty_core::migrate::HistoryFile::load_or_default(&history_path)
+    let history = HistoryFile::load_or_default(&history_path)
         .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), e.to_string()))?;
 
     let entries = history.migrations().iter().map(|m| {
