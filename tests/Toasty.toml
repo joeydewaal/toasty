@@ -1,0 +1,2 @@
+[migration]
+path = "fixtures/migrate/toasty"

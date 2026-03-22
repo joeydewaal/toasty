@@ -30,3 +30,15 @@ async fn migrate_macro_is_idempotent() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn migrate_macro_no_args_uses_default_path() {
+    // With no args, the macro reads Toasty.toml from CARGO_MANIFEST_DIR.
+    // This crate has a Toasty.toml at the root of tests/, so it resolves correctly.
+    let mut db = toasty::Db::builder()
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+
+    toasty::migrate!().exec(&mut db).await.unwrap();
+}

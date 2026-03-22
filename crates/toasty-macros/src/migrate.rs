@@ -19,6 +19,13 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         None => manifest_dir.join("Toasty.toml"),
     };
 
+    if !config_path.exists() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Toasty.toml not found at `{}`", config_path.display()),
+        ));
+    }
+
     let config = toasty_core::migrate::Config::load_or_default(&config_path)
         .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), e.to_string()))?;
 
