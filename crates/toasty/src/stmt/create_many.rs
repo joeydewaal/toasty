@@ -142,3 +142,9 @@ impl<M: Model> Default for CreateMany<M> {
         Self { stmts: vec![] }
     }
 }
+
+impl<M: Model> FromIterator<M::Create> for CreateMany<M> {
+    fn from_iter<T: IntoIterator<Item = M::Create>>(iter: T) -> Self {
+        iter.into_iter().fold(Self::new(), Self::item)
+    }
+}

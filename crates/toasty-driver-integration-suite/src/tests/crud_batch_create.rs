@@ -202,6 +202,63 @@ pub async fn batch_create_unique_violation_rolls_back(t: &mut Test) -> Result<()
     Ok(())
 }
 
+#[driver_test(id(ID))]
+pub async fn batch_create_from_iter(test: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct Todo {
+        #[key]
+        #[auto]
+        id: ID,
+
+        title: String,
+    }
+
+    let mut db = test.setup_db(models!(Todo)).await;
+
+    let titles = ["todo 1", "todo 2", "todo 3"];
+    let many: toasty::stmt::CreateMany<Todo> =
+        titles.iter().map(|t| Todo::create().title(*t)).collect();
+
+    let res = many.exec(&mut db).await?;
+    assert_eq!(3, res.len());
+
+    let mut found: Vec<_> = res.iter().map(|t| t.title.as_str()).collect();
+    found.sort_unstable();
+    assert_eq!(found, ["todo 1", "todo 2", "todo 3"]);
+
+    Ok(())
+}
+
+#[driver_test(id(ID))]
+pub async fn batch_create_from_iter_create_macro(test: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct Todo {
+        #[key]
+        #[auto]
+        id: ID,
+
+        title: String,
+    }
+
+    let mut db = test.setup_db(models!(Todo)).await;
+
+    let titles = ["todo 1", "todo 2", "todo 3"];
+    let many: toasty::stmt::CreateMany<Todo> = titles
+        .iter()
+        .copied()
+        .map(|t| toasty::create!(Todo { title: t }))
+        .collect();
+
+    let res = many.exec(&mut db).await?;
+    assert_eq!(3, res.len());
+
+    let mut found: Vec<_> = res.iter().map(|t| t.title.as_str()).collect();
+    found.sort_unstable();
+    assert_eq!(found, ["todo 1", "todo 2", "todo 3"]);
+
+    Ok(())
+}
+
 /// Multi-row batch inside an explicit transaction executes as a single INSERT
 /// without extra savepoint wrapping (the statement is inherently atomic).
 #[driver_test(id(ID), requires(sql))]
