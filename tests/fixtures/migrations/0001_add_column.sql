@@ -1,0 +1,1 @@
+ALTER TABLE "migrate_test_items" ADD COLUMN "score" INTEGER NOT NULL DEFAULT 0

@@ -9,6 +9,7 @@
 extern crate proc_macro;
 
 mod create;
+mod migrate;
 mod model;
 mod query;
 
@@ -1712,6 +1713,29 @@ pub fn query(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn create(input: TokenStream) -> TokenStream {
     match create::generate(input.into()) {
+        Ok(output) => output.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Embeds database migrations into the binary at compile time.
+///
+/// Reads `history.toml` and the referenced SQL migration files from the
+/// given directory (default `toasty/` relative to `Cargo.toml`) and
+/// produces a [`Migrator`] whose [`exec`] method applies pending migrations.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Default: reads from `toasty/` relative to Cargo.toml
+/// toasty::migrate!().exec(&db).await?;
+///
+/// // Custom path:
+/// toasty::migrate!("../migrations").exec(&db).await?;
+/// ```
+#[proc_macro]
+pub fn migrate(input: TokenStream) -> TokenStream {
+    match migrate::generate(input.into()) {
         Ok(output) => output.into(),
         Err(e) => e.to_compile_error().into(),
     }

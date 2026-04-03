@@ -102,6 +102,9 @@
 //!   the SQL driver crates.
 //! - **`toasty-driver-*`** — one crate per database backend.
 
+/// Embedded migration types and the shared apply logic.
+pub mod migrate;
+
 mod update_target;
 pub use update_target::UpdateTarget;
 
@@ -124,12 +127,13 @@ pub use schema::{BelongsTo, HasMany, HasOne};
 pub mod stmt;
 pub use stmt::Statement;
 
-pub use toasty_macros::{Embed, Model, create, query};
+pub use toasty_macros::{Embed, Model, create, migrate, query};
 
 pub use toasty_core::{Error, Result, schema::app::ModelSet};
 
 #[doc(hidden)]
 pub mod codegen_support {
+    pub use crate::migrate::{EmbeddedMigration, Migrator};
     pub use crate::schema::inventory;
     pub use crate::{
         Db, Error, Executor, Result, Statement,

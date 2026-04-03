@@ -77,6 +77,22 @@ impl Connection {
             .unwrap();
         rx.await.unwrap()
     }
+
+    /// Applies pending migrations to the database.
+    ///
+    /// Each tuple is `(id, name, sql)`. Migrations already applied (by ID)
+    /// are skipped. Returns the number of newly applied migrations.
+    pub async fn apply_migrations(
+        &self,
+        migrations: Vec<(u64, String, String)>,
+    ) -> crate::Result<usize> {
+        let (tx, rx) = oneshot::channel();
+        self.handle()
+            .in_tx
+            .send(ConnectionOperation::ApplyMigrations { migrations, tx })
+            .unwrap();
+        rx.await.unwrap()
+    }
 }
 
 impl Connection {

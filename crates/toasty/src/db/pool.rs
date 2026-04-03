@@ -76,6 +76,11 @@ pub(crate) enum ConnectionOperation {
     PushSchema {
         tx: oneshot::Sender<crate::Result<()>>,
     },
+    /// Apply pending migrations.
+    ApplyMigrations {
+        migrations: Vec<(u64, String, String)>,
+        tx: oneshot::Sender<crate::Result<usize>>,
+    },
 }
 
 /// A connection pool that manages database connections with background tasks.
@@ -212,6 +217,14 @@ impl deadpool::managed::Manager for Manager {
                     }
                     ConnectionOperation::PushSchema { tx } => {
                         let result = connection.push_schema(&engine.schema).await;
+                        let _ = tx.send(result);
+                    }
+                    ConnectionOperation::ApplyMigrations { migrations, tx } => {
+                        let refs: Vec<(u64, &str, &str)> = migrations
+                            .iter()
+                            .map(|(id, name, sql)| (*id, name.as_str(), sql.as_str()))
+                            .collect();
+                        let result = crate::migrate::apply_pending(&mut *connection, &refs).await;
                         let _ = tx.send(result);
                     }
                 }
