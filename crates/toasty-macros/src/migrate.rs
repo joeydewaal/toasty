@@ -1,20 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use serde::Deserialize;
 use syn::LitStr;
-
-#[derive(Deserialize)]
-struct HistoryFile {
-    version: u32,
-    #[serde(default)]
-    migrations: Vec<HistoryFileMigration>,
-}
-
-#[derive(Deserialize)]
-struct HistoryFileMigration {
-    id: u64,
-    name: String,
-}
+use toasty_core::schema::db::HistoryFile;
 
 pub(crate) fn generate(input: TokenStream) -> syn::Result<TokenStream> {
     let rel_path = if input.is_empty() {
@@ -44,12 +31,12 @@ pub(crate) fn generate(input: TokenStream) -> syn::Result<TokenStream> {
         )
     })?;
 
-    if history.version != 1 {
+    if !history.is_supported_version() {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             format!(
                 "unsupported history file version {} in {}; expected 1",
-                history.version,
+                history.version(),
                 history_path.display()
             ),
         ));
@@ -59,7 +46,7 @@ pub(crate) fn generate(input: TokenStream) -> syn::Result<TokenStream> {
     let history_path_str = history_path.to_string_lossy().to_string();
 
     let mut entries = Vec::new();
-    for m in &history.migrations {
+    for m in history.migrations() {
         let id = m.id;
         let name = &m.name;
 

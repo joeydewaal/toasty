@@ -33,6 +33,11 @@ pub use diff::{DiffContext, RenameHints};
 mod index;
 pub use index::{Index, IndexColumn, IndexId, IndexOp, IndexScope, IndicesDiff, IndicesDiffItem};
 
+mod history_file;
+#[cfg(feature = "toml")]
+pub use history_file::HistoryFileError;
+pub use history_file::{HistoryFile, HistoryFileMigration};
+
 mod migration;
 pub use migration::{AppliedMigration, Migration};
 
