@@ -142,16 +142,6 @@ impl<T: IntoExpr<T>> IntoExpr<T> for &T {
 }
 impl_assign_via_expr!({T: IntoExpr<T>} &T => T);
 
-impl<T: IntoExpr<T>> IntoExpr<List<T>> for &T {
-    fn into_expr(self) -> Expr<List<T>> {
-        self.by_ref().cast()
-    }
-
-    fn by_ref(&self) -> Expr<List<T>> {
-        (*self).by_ref().cast()
-    }
-}
-
 impl<T: IntoExpr<T>> IntoExpr<Self> for Option<T> {
     fn into_expr(self) -> Expr<Self> {
         match self {
@@ -353,6 +343,24 @@ forward_impl!(Arc<T>, Box<T>, Rc<T>,);
 impl_assign_via_expr!({T: IntoExpr<T>} T => Arc<T>);
 impl_assign_via_expr!({T: IntoExpr<T>} T => Box<T>);
 impl_assign_via_expr!({T: IntoExpr<T>} T => Rc<T>);
+
+macro_rules! ref_smart_ptr_impl {
+    ( $( $ptr:ident ,)* ) => {
+        $(
+            impl<T: IntoExpr<T>> IntoExpr<T> for &$ptr<T> {
+                fn into_expr(self) -> Expr<T> {
+                    T::by_ref(self)
+                }
+
+                fn by_ref(&self) -> Expr<T> {
+                    T::by_ref(self)
+                }
+            }
+        )*
+    };
+}
+
+ref_smart_ptr_impl!(Arc, Box, Rc,);
 
 macro_rules! impl_into_expr_for_tuple {
     (! $( $n:tt $t:ident $e:ident )* ) => {
