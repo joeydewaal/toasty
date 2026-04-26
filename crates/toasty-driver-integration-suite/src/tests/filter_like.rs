@@ -5,13 +5,14 @@ struct Item {
     #[key]
     id: i64,
     name: String,
+    email: Option<String>,
 }
 
 async fn setup(test: &mut Test) -> toasty::Db {
     let mut db = test.setup_db(models!(Item)).await;
 
     toasty::create!(Item::[
-        { id: 1_i64, name: "Alice"   },
+        { id: 1_i64, name: "Alice", email: "alice@toasty.com"   },
         { id: 2_i64, name: "Alicia"  },
         { id: 3_i64, name: "Bob"     },
         { id: 4_i64, name: "Barry"   },
@@ -53,5 +54,19 @@ pub async fn like_no_match(test: &mut Test) -> Result<()> {
 
     assert_eq!(items.len(), 0);
 
+    Ok(())
+}
+
+/// LIKE on a field with an optional `String` value
+#[driver_test(requires(sql))]
+pub async fn starts_with_optional_field(test: &mut Test) -> Result<()> {
+    let mut db = setup(test).await;
+
+    let items: Vec<Item> = Item::filter(Item::fields().email().like("alice%"))
+        .exec(&mut db)
+        .await?;
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].email.as_ref().unwrap(), "alice@toasty.com");
     Ok(())
 }

@@ -8,13 +8,14 @@ struct Item {
     partition_id: i64,
     sort_key: String,
     name: String,
+    email: Option<String>,
 }
 
 async fn setup(test: &mut Test) -> toasty::Db {
     let mut db = test.setup_db(models!(Item)).await;
 
     toasty::create!(Item::[
-        { partition_id: 1_i64, sort_key: "alpha-1", name: "Alice" },
+        { partition_id: 1_i64, sort_key: "alpha-1", name: "Alice", email: "alice@toasty.com" },
         { partition_id: 1_i64, sort_key: "alpha-2", name: "Alicia" },
         { partition_id: 1_i64, sort_key: "beta-1",  name: "Bob"   },
         { partition_id: 1_i64, sort_key: "beta-2",  name: "Barry" },
@@ -167,5 +168,19 @@ pub async fn starts_with_partition_key_error(test: &mut Test) -> Result<()> {
         "expected error when using starts_with on partition key"
     );
 
+    Ok(())
+}
+
+/// starts_with on a field with an optional `String` value
+#[driver_test]
+pub async fn starts_with_optional_field(test: &mut Test) -> Result<()> {
+    let mut db = setup(test).await;
+
+    let items: Vec<Item> = Item::filter(Item::fields().email().starts_with("alice"))
+        .exec(&mut db)
+        .await?;
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].email.as_ref().unwrap(), "alice@toasty.com");
     Ok(())
 }
