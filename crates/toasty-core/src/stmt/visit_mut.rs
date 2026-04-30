@@ -5,10 +5,11 @@ use super::{
     ExprBinaryOp, ExprCast, ExprColumn, ExprError, ExprExists, ExprFunc, ExprInList,
     ExprInSubquery, ExprIsNull, ExprIsVariant, ExprLet, ExprLike, ExprList, ExprMap, ExprMatch,
     ExprNot, ExprOr, ExprProject, ExprRecord, ExprReference, ExprSet, ExprSetOp, ExprStartsWith,
-    ExprStmt, Filter, FuncCount, FuncLastInsertId, Insert, InsertTarget, Join, JoinOp, Limit,
-    LimitCursor, LimitOffset, Node, OrderBy, OrderByExpr, Path, Projection, Query, Returning,
-    Select, Source, SourceModel, SourceTable, SourceTableId, Statement, TableDerived, TableFactor,
-    TableRef, TableWithJoins, Type, Update, UpdateTarget, Value, ValueRecord, Values, With,
+    ExprStmt, Filter, FuncCount, FuncLastInsertId, Include, Insert, InsertTarget, Join, JoinOp,
+    Limit, LimitCursor, LimitOffset, Node, OrderBy, OrderByExpr, Path, Projection, Query,
+    Returning, Select, Source, SourceModel, SourceTable, SourceTableId, Statement, TableDerived,
+    TableFactor, TableRef, TableWithJoins, Type, Update, UpdateTarget, Value, ValueRecord, Values,
+    With,
 };
 
 /// Mutable visitor trait for the statement AST.
@@ -358,6 +359,13 @@ pub trait VisitMut {
         visit_path_mut(self, i);
     }
 
+    /// Visits an [`Include`] node mutably.
+    ///
+    /// The default implementation delegates to [`visit_include_mut`].
+    fn visit_include_mut(&mut self, i: &mut Include) {
+        visit_include_mut(self, i);
+    }
+
     /// Visits a [`Projection`] node mutably.
     ///
     /// The default implementation delegates to [`visit_projection_mut`].
@@ -684,6 +692,10 @@ impl<V: VisitMut> VisitMut for &mut V {
 
     fn visit_path_mut(&mut self, i: &mut Path) {
         VisitMut::visit_path_mut(&mut **self, i);
+    }
+
+    fn visit_include_mut(&mut self, i: &mut Include) {
+        VisitMut::visit_include_mut(&mut **self, i);
     }
 
     fn visit_projection_mut(&mut self, i: &mut Projection) {
@@ -1249,14 +1261,25 @@ where
 {
     match node {
         Returning::Model { include } => {
-            for path in include {
-                v.visit_path_mut(path);
+            for inc in include {
+                v.visit_include_mut(inc);
             }
         }
         Returning::Changed => {}
         Returning::Project(expr) => v.visit_expr_mut(expr),
         Returning::Expr(expr) => v.visit_expr_mut(expr),
     }
+}
+
+/// Default mutable traversal for [`Include`] nodes.
+///
+/// Only the path is visited; the optional filter expression is left
+/// untouched. See [`visit_include`] for why.
+pub fn visit_include_mut<V>(v: &mut V, node: &mut Include)
+where
+    V: VisitMut + ?Sized,
+{
+    v.visit_path_mut(&mut node.path);
 }
 
 /// Default mutable traversal for [`Source`] nodes. Dispatches to the model or table source visitor.

@@ -76,6 +76,8 @@ impl Expand<'_> {
             }
         };
 
+        let filter_method = self.expand_filter_method(quote!(#model_ident));
+
         quote!(
             #struct_def
 
@@ -97,6 +99,8 @@ impl Expand<'_> {
                     self.path.in_query(rhs)
                 }
 
+                #filter_method
+
                 #create_method
 
                 #( #methods )*
@@ -107,7 +111,29 @@ impl Expand<'_> {
                     self.path
                 }
             }
+
+            impl<__Origin> Into<#toasty::stmt::Include<__Origin, #model_ident>> for #field_struct_ident<__Origin> {
+                fn into(self) -> #toasty::stmt::Include<__Origin, #model_ident> {
+                    self.path.into()
+                }
+            }
         )
+    }
+
+    fn expand_filter_method(&self, target_ty: TokenStream) -> TokenStream {
+        let toasty = &self.toasty;
+        let vis = &self.model.vis;
+        if !matches!(self.model.kind, ModelKind::Root(_)) {
+            return TokenStream::new();
+        }
+        quote! {
+            /// Restrict which related rows preload when this path is passed
+            /// to `.include(...)`. The predicate is evaluated in the
+            /// relation target's scope.
+            #vis fn filter(self, predicate: #toasty::stmt::Expr<bool>) -> #toasty::stmt::Include<__Origin, #target_ty> {
+                #toasty::stmt::Include::from_path_and_filter(self.path, predicate)
+            }
+        }
     }
 
     pub(super) fn expand_field_list_struct(&self) -> TokenStream {
@@ -192,6 +218,8 @@ impl Expand<'_> {
             }
         };
 
+        let filter_method = self.expand_filter_method(quote!(#toasty::List<#model_ident>));
+
         quote!(
             #struct_def
 
@@ -206,6 +234,8 @@ impl Expand<'_> {
 
                 #any_method
 
+                #filter_method
+
                 #create_method
 
                 #( #methods )*
@@ -214,6 +244,12 @@ impl Expand<'_> {
             impl<__Origin> Into<#toasty::Path<__Origin, #toasty::List<#model_ident>>> for #field_list_struct_ident<__Origin> {
                 fn into(self) -> #toasty::Path<__Origin, #toasty::List<#model_ident>> {
                     self.path
+                }
+            }
+
+            impl<__Origin> Into<#toasty::stmt::Include<__Origin, #toasty::List<#model_ident>>> for #field_list_struct_ident<__Origin> {
+                fn into(self) -> #toasty::stmt::Include<__Origin, #toasty::List<#model_ident>> {
+                    self.path.into()
                 }
             }
         )

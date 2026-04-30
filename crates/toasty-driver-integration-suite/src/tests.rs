@@ -68,6 +68,7 @@ pub mod relation_has_many_same_target;
 pub mod relation_has_many_scoped_query;
 pub mod relation_has_one_crud;
 pub mod relation_preload;
+pub mod relation_preload_filter;
 pub mod starts_with;
 pub mod tx_atomic_stmt;
 pub mod tx_interactive;

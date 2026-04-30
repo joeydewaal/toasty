@@ -198,8 +198,8 @@ impl Expand<'_> {
 
         if self.model.has_includable_fields() {
             Some(quote! {
-                    #vis fn include<#include_ty>(mut self, path: impl #toasty::Into<#toasty::Path<#model_ident, #include_ty>>) -> #query_struct_ident {
-                        self.stmt.include(path.into());
+                    #vis fn include<#include_ty>(mut self, include: impl #toasty::Into<#toasty::stmt::Include<#model_ident, #include_ty>>) -> #query_struct_ident {
+                        self.stmt.include(include.into());
                         self
                     }
             })

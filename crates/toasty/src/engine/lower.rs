@@ -509,17 +509,28 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             // then emit one merged subquery per group — without this, each
             // `.include()` call would overwrite the previous subquery at the
             // same field slot (see issue #691).
-            include.sort_by_key(|p| *p.projection.as_slice().first().expect("empty include path"));
+            include.sort_by_key(|inc| {
+                *inc.path
+                    .projection
+                    .as_slice()
+                    .first()
+                    .expect("empty include path")
+            });
 
             // Track which top-level fields are explicitly included so that
             // deferred fields are not masked when the caller asked for them.
             let mut included_top_fields = stmt::PathFieldSet::new();
 
-            let mut nested: Vec<stmt::Projection> = vec![];
+            // For each group sharing a top-level field, accumulate:
+            //   - `nested`: sub-paths (and their filters) to recurse into
+            //   - `top_filter`: filters whose path is exactly this top-level
+            //                   field, AND-ed across calls
+            let mut nested: Vec<(stmt::Projection, Option<stmt::Expr>)> = vec![];
+            let mut top_filter: Option<stmt::Expr> = None;
             let mut current: Option<usize> = None;
 
-            for path in include {
-                let [first, rest @ ..] = path.projection.as_slice() else {
+            for inc in include {
+                let [first, rest @ ..] = inc.path.projection.as_slice() else {
                     unreachable!("guaranteed non-empty by sort_by_key above")
                 };
 
@@ -527,15 +538,30 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
 
                 if current != Some(*first) {
                     if let Some(field) = current {
-                        self.build_include_subquery(&mut returning, field, &nested);
+                        self.build_include_subquery(
+                            &mut returning,
+                            field,
+                            &nested,
+                            top_filter.take(),
+                        );
                         nested.clear();
                     }
                     current = Some(*first);
                 }
-                nested.push(stmt::Projection::from(rest));
+
+                if rest.is_empty() {
+                    if let Some(f) = inc.filter {
+                        top_filter = Some(match top_filter.take() {
+                            Some(prev) => stmt::Expr::and(prev, f),
+                            None => f,
+                        });
+                    }
+                } else {
+                    nested.push((stmt::Projection::from(rest), inc.filter));
+                }
             }
             if let Some(field) = current {
-                self.build_include_subquery(&mut returning, field, &nested);
+                self.build_include_subquery(&mut returning, field, &nested, top_filter.take());
             }
 
             // Encode each deferred slot so the row decoder can distinguish
@@ -890,7 +916,8 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
         &mut self,
         returning: &mut stmt::Expr,
         field_index: usize,
-        nested: &[stmt::Projection],
+        nested: &[(stmt::Projection, Option<stmt::Expr>)],
+        top_filter: Option<stmt::Expr>,
     ) {
         let field = &self.model_unwrap().fields[field_index];
 
@@ -899,12 +926,16 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
         // a no-op here. The masking step in `visit_returning_mut` will skip
         // this field's slot since it appears in the include set.
         if field.deferred && field.ty.is_primitive() {
-            for path in nested {
+            for (path, _) in nested {
                 assert!(
                     path.is_empty(),
                     "include sub-paths on deferred primitive fields are not supported"
                 );
             }
+            assert!(
+                top_filter.is_none(),
+                "include filter on a deferred primitive field is not supported"
+            );
             return;
         }
 
@@ -961,18 +992,31 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
             _ => todo!(),
         };
 
-        // Attach each non-empty remainder as a nested include on the subquery.
-        // Empty remainders (from a bare `.include(posts())`) need no nested
-        // include — the subquery itself satisfies them. The lowering pipeline
-        // will recursively group and process the nested includes when it
-        // encounters `Returning::Model` on this subquery.
-        for rest in nested {
-            if !rest.is_empty() {
-                stmt.include(stmt::Path {
+        // AND the user-supplied filter (if any) onto the join predicate. The
+        // filter is written in the relation target's scope (e.g. fields of
+        // `Todo`), so the in-flight `Simplify::visit_stmt_query_mut` call
+        // below resolves any field references just like a top-level filter.
+        if let Some(filter) = top_filter {
+            stmt.add_filter(filter);
+        }
+
+        // Attach each non-empty remainder as a nested include on the subquery,
+        // carrying any deeper-level filter forward. Empty remainders (from a
+        // bare `.include(posts())`) need no nested include — the subquery
+        // itself satisfies them. The lowering pipeline recursively groups and
+        // processes nested includes when it encounters `Returning::Model` on
+        // this subquery.
+        for (rest, filter) in nested {
+            if rest.is_empty() {
+                continue;
+            }
+            stmt.include(stmt::Include {
+                path: stmt::Path {
                     root: stmt::PathRoot::Model(target_model_id),
                     projection: rest.clone(),
-                });
-            }
+                },
+                filter: filter.clone(),
+            });
         }
 
         // Simplify the new stmt to handle relations.

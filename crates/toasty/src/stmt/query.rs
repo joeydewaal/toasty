@@ -145,8 +145,8 @@ impl<T> Query<T> {
     /// // Include the field at index 1 (name)
     /// q.include(Path::<User, String>::from_field_index(1));
     /// ```
-    pub fn include(&mut self, path: impl Into<stmt::Path>) -> &mut Self {
-        self.untyped.include(path.into());
+    pub fn include(&mut self, include: impl Into<stmt::Include>) -> &mut Self {
+        self.untyped.include(include.into());
         self
     }
 
