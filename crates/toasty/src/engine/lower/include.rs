@@ -1,7 +1,7 @@
 //! Lowering for `Returning::Model` includes and deferred-field masking.
 //!
 //! `mapping::Model::default_returning` is computed at schema-build time with
-//! every `#[deferred]` field — top-level or nested inside an embedded type —
+//! every deferred field — top-level or nested inside an embedded type —
 //! pre-masked to `Null`. Lowering starts from a clone of the default
 //! expression and splices loaded forms in for fields named by `.include()`
 //! paths or, for an `INSERT … RETURNING`, for every deferred field.
@@ -9,7 +9,7 @@
 //! The recursion is mapping-driven: each `mapping::Field` variant decides how
 //! to descend into its corresponding expression. Driving off the mapping
 //! tree (rather than the expression's shape) is what lets us reach a
-//! `#[deferred]` sub-field of an embed struct nested inside an enum variant —
+//! deferred sub-field of an embed struct nested inside an enum variant —
 //! the masked `Null` lives inside a `Match` expression, not a `Record`.
 //!
 //! Include paths arrive as [`stmt::Include`] values (path + optional filter).
@@ -331,8 +331,7 @@ impl LowerStatement<'_, '_> {
         // the database executing the join, so it is SQL-only — a key-value
         // backend would need a cascade of per-step queries instead.
         let via = match &field.ty {
-            app::FieldTy::HasMany(rel) => rel.kind.via(),
-            app::FieldTy::HasOne(rel) => rel.kind.via(),
+            app::FieldTy::Has(rel) => rel.kind.via(),
             _ => None,
         };
         if let Some(via) = via {
@@ -348,16 +347,25 @@ impl LowerStatement<'_, '_> {
         }
 
         let (mut stmt, target_model_id) = match &field.ty {
-            app::FieldTy::HasMany(rel) => (
-                stmt::Query::new_select(
+            app::FieldTy::Has(rel) => {
+                let mut query = stmt::Query::new_select(
                     rel.target,
                     stmt::Expr::eq(
                         stmt::Expr::ref_parent_model(),
                         stmt::Expr::ref_self_field(direct_pair(&rel.kind)),
                     ),
-                ),
-                rel.target,
-            ),
+                );
+                if rel.is_one() {
+                    // To handle single relations, we need a new query modifier that
+                    // returns a single record and not a list. This matters for the
+                    // type system.
+                    query.single = true;
+                }
+                (query, rel.target)
+            }
+            // To handle single relations, we need a new query modifier that
+            // returns a single record and not a list. This matters for the
+            // type system.
             app::FieldTy::BelongsTo(rel) => {
                 let source_fk;
                 let target_pk;
@@ -380,17 +388,6 @@ impl LowerStatement<'_, '_> {
 
                 let mut query =
                     stmt::Query::new_select(rel.target, stmt::Expr::eq(source_fk, target_pk));
-                query.single = true;
-                (query, rel.target)
-            }
-            app::FieldTy::HasOne(rel) => {
-                let mut query = stmt::Query::new_select(
-                    rel.target,
-                    stmt::Expr::eq(
-                        stmt::Expr::ref_parent_model(),
-                        stmt::Expr::ref_self_field(direct_pair(&rel.kind)),
-                    ),
-                );
                 query.single = true;
                 (query, rel.target)
             }

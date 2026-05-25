@@ -310,7 +310,7 @@ impl Expand<'_> {
                         primary_key: false,
                         auto: None,
                         versionable: false,
-                        deferred: false,
+                        deferred: <#ty as #toasty::Field>::DEFERRED,
                         constraints: vec![],
                         variant: Some(#toasty::core::schema::app::VariantId {
                             model: id,
@@ -494,7 +494,7 @@ impl Expand<'_> {
                     let field_exprs = fields.iter().map(|field| {
                         let field_ident = &field.name.ident;
                         let ty = primitive_ty_unwrap(field);
-                        quote!(#toasty::into_untyped_expr::<#ty, _>(#field_ident))
+                        quote!(#toasty::into_untyped_expr::<FieldExprTarget<#ty>, _>(#field_ident))
                     });
 
                     quote! {

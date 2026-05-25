@@ -830,6 +830,11 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
         if let stmt::Returning::Model { include } = i {
+            // Start from the schema's pre-computed default returning — every
+            // Deferred fields, top-level or nested, are already `Null`.
+            // `process_top_level_includes` then splices loaded forms in for
+            // the fields named by include paths (and for every deferred field
+            // when this is an `INSERT ... RETURNING`).
             let mut returning = self.mapping_unwrap().default_returning.clone();
             let mut includes = std::mem::take(include);
             let is_insert = self.cx.is_insert();
@@ -1062,7 +1067,7 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
 
                     match &field.ty {
                         app::FieldTy::Primitive(_) | app::FieldTy::Embedded(_) => {}
-                        app::FieldTy::HasMany(_) | app::FieldTy::HasOne(_) => todo!(),
+                        app::FieldTy::Has(_) => todo!(),
                         app::FieldTy::BelongsTo(rel) => {
                             *operand = key_field_refs(
                                 nesting,

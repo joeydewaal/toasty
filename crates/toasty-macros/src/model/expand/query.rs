@@ -224,6 +224,10 @@ impl Expand<'_> {
         let model_ident = &self.model.ident;
         let query_struct_ident = &self.model.kind.as_root_unwrap().query_struct_ident;
 
+        // Always emit `include()` on root models. The macro can't see through a
+        // field's type to know whether an embedded type holds a deferred
+        // sub-field, so a stricter gate would deny `.include(metadata().notes())`
+        // on a model whose only includable thing lives inside an embed.
         Some(quote! {
                 #vis fn include<#include_ty>(mut self, include: impl #toasty::Into<#toasty::stmt::Include<#model_ident, #include_ty>>) -> #query_struct_ident {
                     self.stmt.include(include.into());
