@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/tokio-rs/toasty/compare/toasty-v0.6.0...toasty-v0.6.1) - 2026-05-16
+
+### Added
+
+- Chain relation methods through multiple steps ([#903])
+- Order by multiple fields ([#901])
+
+### Fixed
+
+- Composite foreign keys in relation traversal ([#915])
+- Belongs-to relations with embed-typed primary keys ([#912])
+- Queries with composite keys in equality conditions ([#906])
+- Multiple order_by expressions now stack correctly ([#899])
+
+[#899]: https://github.com/tokio-rs/toasty/pull/899
+[#901]: https://github.com/tokio-rs/toasty/pull/901
+[#903]: https://github.com/tokio-rs/toasty/pull/903
+[#906]: https://github.com/tokio-rs/toasty/pull/906
+[#912]: https://github.com/tokio-rs/toasty/pull/912
+[#915]: https://github.com/tokio-rs/toasty/pull/915
+
+## [0.6.0](https://github.com/tokio-rs/toasty/compare/toasty-v0.5.0...toasty-v0.6.0) - 2026-05-14
+
+### Added
+
+- Vec<scalar> model fields with push, extend, clear, pop, remove_at, and remove operations on PostgreSQL, MySQL, SQLite, and DynamoDB ([#866], [#872], [#880], [#887])
+- Connection pooling improvements: lifetime capping, idle time limits, and automatic broken connection detection and eviction ([#879], [#882], [#874], [#867])
+- Query capabilities: .select() projection through BelongsTo relations, per-call column projection, ilike() filter method, filtering by associated model fields, all-condition filters for associations, and latest_by queries ([#827], [#820], [#801], [#781], [#784], [#707])
+- Compile-time validation for column storage types and create! macro field sets ([#832], [#648])
+- Auto proxying through tuple-newtype Embed types ([#836])
+- #[deferred] field attribute and Deferred<T> wrapper with embedded type support ([#793], [#799])
+- Backward pagination driver capability ([#757])
+- Full-table scan support on DynamoDB ([#821])
+- IN-list parameter optimization for PostgreSQL ([#818])
+
+### Fixed
+
+- Compile-time validation for explicit auto strategies ([#851])
+- Record equality comparisons now properly apply type casting rules ([#838])
+
+[#648]: https://github.com/tokio-rs/toasty/pull/648
+[#707]: https://github.com/tokio-rs/toasty/pull/707
+[#757]: https://github.com/tokio-rs/toasty/pull/757
+[#781]: https://github.com/tokio-rs/toasty/pull/781
+[#784]: https://github.com/tokio-rs/toasty/pull/784
+[#793]: https://github.com/tokio-rs/toasty/pull/793
+[#799]: https://github.com/tokio-rs/toasty/pull/799
+[#801]: https://github.com/tokio-rs/toasty/pull/801
+[#818]: https://github.com/tokio-rs/toasty/pull/818
+[#820]: https://github.com/tokio-rs/toasty/pull/820
+[#821]: https://github.com/tokio-rs/toasty/pull/821
+[#827]: https://github.com/tokio-rs/toasty/pull/827
+[#832]: https://github.com/tokio-rs/toasty/pull/832
+[#836]: https://github.com/tokio-rs/toasty/pull/836
+[#838]: https://github.com/tokio-rs/toasty/pull/838
+[#851]: https://github.com/tokio-rs/toasty/pull/851
+[#866]: https://github.com/tokio-rs/toasty/pull/866
+[#867]: https://github.com/tokio-rs/toasty/pull/867
+[#872]: https://github.com/tokio-rs/toasty/pull/872
+[#874]: https://github.com/tokio-rs/toasty/pull/874
+[#879]: https://github.com/tokio-rs/toasty/pull/879
+[#880]: https://github.com/tokio-rs/toasty/pull/880
+[#882]: https://github.com/tokio-rs/toasty/pull/882
+[#887]: https://github.com/tokio-rs/toasty/pull/887
+
 ## [0.5.0](https://github.com/tokio-rs/toasty/compare/toasty-v0.4.0...toasty-v0.5.0) - 2026-04-27
 
 ### Added

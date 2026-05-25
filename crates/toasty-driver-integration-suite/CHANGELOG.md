@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/tokio-rs/toasty/compare/toasty-driver-integration-suite-v0.6.0...toasty-driver-integration-suite-v0.6.1) - 2026-05-16
+
+### Added
+
+- .select() projections through HasMany relations ([#894])
+- Chain relation methods on Many for multi-step queries ([#903])
+- Order by multiple fields ([#901])
+
+### Fixed
+
+- Support composite foreign keys in relation-chain queries ([#915])
+- Enable belongs_to with embed-typed primary keys ([#912])
+- Support composite keys in equality comparisons ([#906])
+- Improved syntax and error messages for composite-key belongs_to ([#905])
+- Multiple order_by expressions are now combined instead of replacing ([#899])
+
+[#894]: https://github.com/tokio-rs/toasty/pull/894
+[#899]: https://github.com/tokio-rs/toasty/pull/899
+[#901]: https://github.com/tokio-rs/toasty/pull/901
+[#903]: https://github.com/tokio-rs/toasty/pull/903
+[#905]: https://github.com/tokio-rs/toasty/pull/905
+[#906]: https://github.com/tokio-rs/toasty/pull/906
+[#912]: https://github.com/tokio-rs/toasty/pull/912
+[#915]: https://github.com/tokio-rs/toasty/pull/915
+
+## [0.6.0](https://github.com/tokio-rs/toasty/compare/toasty-driver-integration-suite-v0.5.0...toasty-driver-integration-suite-v0.6.0) - 2026-05-14
+
+### Added
+
+- Statement operations (push, extend, clear, pop, remove_at, remove) for Vec<scalar> fields ([#880], [#887])
+- Vec<scalar> support across PostgreSQL, MySQL, SQLite, and DynamoDB ([#866], [#872])
+- Connection pool automatically detects and recovers from broken connections and backend restarts ([#867], [#874])
+- Custom index names via the index macro ([#842])
+- Auto ID proxying for embedded tuple-newtype types ([#836])
+- .select() column projection through model relations ([#820], [#827])
+- Optimized IN-list binding as array parameters on PostgreSQL ([#818])
+- Full-table scan support for DynamoDB ([#821])
+- #[deferred] attribute for lazy-loaded fields in models and embedded types ([#793], [#799])
+- Backward pagination support ([#757])
+- Case-insensitive pattern matching with ilike() ([#801])
+- latest_by() query to fetch the most recent record by a field ([#707])
+- Filter queries by fields on associated models ([#781])
+- all() filter method for associations ([#784])
+
+### Fixed
+
+- Record equality and comparison operations now work correctly with cast rules ([#838])
+
+[#707]: https://github.com/tokio-rs/toasty/pull/707
+[#757]: https://github.com/tokio-rs/toasty/pull/757
+[#781]: https://github.com/tokio-rs/toasty/pull/781
+[#784]: https://github.com/tokio-rs/toasty/pull/784
+[#793]: https://github.com/tokio-rs/toasty/pull/793
+[#799]: https://github.com/tokio-rs/toasty/pull/799
+[#801]: https://github.com/tokio-rs/toasty/pull/801
+[#818]: https://github.com/tokio-rs/toasty/pull/818
+[#820]: https://github.com/tokio-rs/toasty/pull/820
+[#821]: https://github.com/tokio-rs/toasty/pull/821
+[#827]: https://github.com/tokio-rs/toasty/pull/827
+[#836]: https://github.com/tokio-rs/toasty/pull/836
+[#838]: https://github.com/tokio-rs/toasty/pull/838
+[#842]: https://github.com/tokio-rs/toasty/pull/842
+[#866]: https://github.com/tokio-rs/toasty/pull/866
+[#867]: https://github.com/tokio-rs/toasty/pull/867
+[#872]: https://github.com/tokio-rs/toasty/pull/872
+[#874]: https://github.com/tokio-rs/toasty/pull/874
+[#880]: https://github.com/tokio-rs/toasty/pull/880
+[#887]: https://github.com/tokio-rs/toasty/pull/887
+
 ## [0.5.0](https://github.com/tokio-rs/toasty/compare/toasty-driver-integration-suite-v0.4.0...toasty-driver-integration-suite-v0.5.0) - 2026-04-27
 
 ### Added

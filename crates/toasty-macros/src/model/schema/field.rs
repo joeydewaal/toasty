@@ -80,15 +80,6 @@ pub(crate) enum FieldTy {
     HasOne(HasOne),
 }
 
-impl FieldTy {
-    pub(crate) fn is_relation(&self) -> bool {
-        matches!(
-            self,
-            Self::BelongsTo(..) | Self::HasMany(..) | Self::HasOne(..)
-        )
-    }
-}
-
 impl FieldAttr {
     pub(crate) fn is_indexed(&self) -> bool {
         self.unique || self.index
@@ -139,7 +130,14 @@ impl FieldAttr {
                     field_attr.unique = true;
                 }
             } else if attr.path().is_ident("index") {
-                if field_attr.index {
+                if !matches!(attr.meta, syn::Meta::Path(_)) {
+                    errs.push(syn::Error::new_spanned(
+                        attr,
+                        "field-level `#[index]` does not take arguments; \
+                         for a composite index spanning multiple fields, use a \
+                         struct-level `#[index(field1, field2, ...)]` attribute on the model",
+                    ));
+                } else if field_attr.index {
                     errs.push(syn::Error::new_spanned(
                         attr,
                         "duplicate #[index] attribute",

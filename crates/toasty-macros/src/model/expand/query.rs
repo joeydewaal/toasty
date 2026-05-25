@@ -53,6 +53,17 @@ impl Expand<'_> {
                     self.stmt.count()
                 }
 
+                #vis fn select<__E, __T>(
+                    self,
+                    projection: __E,
+                ) -> #toasty::stmt::Query<#toasty::List<__T>>
+                where
+                    __E: #toasty::IntoExpr<__T>,
+                    __T: #toasty::Load,
+                {
+                    self.stmt.select(projection)
+                }
+
                 #vis fn delete(self) -> #toasty::stmt::Delete<()> {
                     self.stmt.delete()
                 }
@@ -109,6 +120,20 @@ impl Expand<'_> {
                 fn into_statement(self) -> #toasty::Statement<#toasty::List<#model_ident>> {
                     use #toasty::IntoStatement;
                     self.stmt.clone().into_statement()
+                }
+            }
+
+            impl #toasty::stmt::IntoScope<#model_ident> for #query_struct_ident {
+                fn into_scope(self) -> #toasty::Statement<#toasty::List<#model_ident>> {
+                    use #toasty::stmt::IntoScope;
+                    self.stmt.into_scope()
+                }
+            }
+
+            impl #toasty::stmt::IntoScope<#model_ident> for &#query_struct_ident {
+                fn into_scope(self) -> #toasty::Statement<#toasty::List<#model_ident>> {
+                    use #toasty::stmt::IntoScope;
+                    self.stmt.clone().into_scope()
                 }
             }
 
@@ -196,15 +221,11 @@ impl Expand<'_> {
         let model_ident = &self.model.ident;
         let query_struct_ident = &self.model.kind.as_root_unwrap().query_struct_ident;
 
-        if self.model.has_includable_fields() {
-            Some(quote! {
-                    #vis fn include<#include_ty>(mut self, include: impl #toasty::Into<#toasty::stmt::Include<#model_ident, #include_ty>>) -> #query_struct_ident {
-                        self.stmt.include(include.into());
-                        self
-                    }
-            })
-        } else {
-            None
-        }
+        Some(quote! {
+                #vis fn include<#include_ty>(mut self, include: impl #toasty::Into<#toasty::stmt::Include<#model_ident, #include_ty>>) -> #query_struct_ident {
+                    self.stmt.include(include.into());
+                    self
+                }
+        })
     }
 }
