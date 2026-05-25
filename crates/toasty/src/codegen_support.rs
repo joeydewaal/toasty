@@ -7,14 +7,15 @@
 pub mod auto;
 pub mod newtype;
 pub mod storage;
+pub mod version;
 
 pub use crate::schema::inventory;
 pub use crate::{
     Db, Error, Executor, Result, Statement,
     schema::create_meta::{assert_create_fields, const_contains},
     schema::{
-        Auto, BelongsTo, CreateField, CreateMeta, Defer, Deferred, DiscoverItem, Embed, Field,
-        HasMany, HasOne, Load, Model, Register, Relation, Scope, ValidateCreate,
+        Auto, BelongsToField, CreateField, CreateMeta, Defer, Deferred, DiscoverItem, Embed, Field,
+        HasManyField, HasOneField, Load, Model, Register, Relation, Scope, ValidateCreate,
         build_deferred_load, generate_unique_id,
     },
     stmt::CreateMany,
@@ -25,7 +26,14 @@ pub use crate::{
 pub use serde_json;
 pub use std::{convert::Into, default::Default, option::Option};
 
+pub use self::version::Version;
 pub use toasty_core as core;
+
+/// The expression-level type that a create/update setter accepts for a field
+/// of type `F`. This is just [`Field::ExprTarget`], but naming it keeps the
+/// long `<F as Field>::ExprTarget` projection out of generated setter
+/// signatures (and out of the compiler errors they produce).
+pub type FieldExprTarget<F> = <F as Field>::ExprTarget;
 
 /// Infer the [`Scope`] type from a scope expression and return its fields
 /// path.

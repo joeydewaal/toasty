@@ -4,6 +4,16 @@ use crate::model::schema::{BelongsTo, Field, FieldTy, HasMany, HasOne};
 use proc_macro2::TokenStream;
 use quote::quote;
 
+struct PairBelongsToCheck<'a> {
+    pair_ident: &'a syn::Ident,
+    field_ident: &'a syn::Ident,
+    ty: &'a syn::Type,
+    field_trait: TokenStream,
+    rel_span: proc_macro2::Span,
+    relation_kind: &'static str,
+    label: &'static str,
+}
+
 impl Expand<'_> {
     pub(super) fn expand_relation_structs(&self) -> TokenStream {
         let toasty = &self.toasty;
@@ -214,18 +224,18 @@ impl Expand<'_> {
             .fields
             .iter()
             .filter_map(|field| {
-                let ty = match &field.ty {
-                    FieldTy::BelongsTo(rel) => &rel.ty,
-                    FieldTy::HasMany(rel) => &rel.ty,
-                    FieldTy::HasOne(rel) => &rel.ty,
+                let (ty, field_trait) = match &field.ty {
+                    FieldTy::BelongsTo(rel) => (&rel.ty, quote!(#toasty::BelongsToField)),
+                    FieldTy::HasMany(rel) => (&rel.ty, quote!(#toasty::HasManyField)),
+                    FieldTy::HasOne(rel) => (&rel.ty, quote!(#toasty::HasOneField)),
                     FieldTy::Primitive(_) => return None,
                 };
                 let field_ident = &field.name.ident;
                 let field_offset = util::int(field.id);
 
                 Some(quote! {
-                    #vis fn #field_ident(self) -> <#ty as #toasty::Relation>::Many {
-                        <#ty as #toasty::Relation>::Many::from_stmt(
+                    #vis fn #field_ident(self) -> <<#ty as #field_trait>::Target as #toasty::Relation>::Many {
+                        <<#ty as #field_trait>::Target as #toasty::Relation>::Many::from_stmt(
                             self.stmt.chain_field(#field_offset)
                         )
                     }
@@ -291,13 +301,14 @@ impl Expand<'_> {
         let vis = &self.model.vis;
         let field_ident = &field.name.ident;
         let ty = &rel.ty;
+        let target_ty = quote!(<#ty as #toasty::BelongsToField>::Target);
 
         let operands = rel.foreign_key.iter().map(|fk_field| {
             let source = &self.model.fields[fk_field.source];
             let source_field_ident = &source.name.ident;
-            let target = &fk_field.target;
+            let target_field = &fk_field.target;
 
-            // `fields().#target()` returns the target field's
+            // `fields().#target_field()` returns the target field's
             // `<Field>::Path<Origin>` — `Path<Origin, T>` for primitives and a
             // wrapping `{Embed}Fields<Origin>` for embedded types. Both
             // convert into `Path<Origin, T>` via `Into`, which is what
@@ -305,7 +316,7 @@ impl Expand<'_> {
             quote! {
                 #toasty::Field::key_constraint(
                     &self.#source_field_ident,
-                    <#ty as #toasty::Relation>::Model::fields().#target().into(),
+                    <#target_ty as #toasty::Relation>::Model::fields().#target_field().into(),
                 )
             }
         });
@@ -331,7 +342,7 @@ impl Expand<'_> {
         );
 
         quote! {
-            #vis fn #field_ident(&self) -> <#ty as #toasty::Relation>::One {
+            #vis fn #field_ident(&self) -> <#target_ty as #toasty::Relation>::One {
                 // Suppress the unused field warning
                 if false {
                     let _ = &self.#field_ident;
@@ -339,8 +350,8 @@ impl Expand<'_> {
 
                 {
                     use #toasty::IntoStatement;
-                    <#ty as #toasty::Relation>::One::from_stmt(
-                        <#ty as #toasty::Relation>::Model::filter(#filter).into_statement().into_query().unwrap()
+                    <#target_ty as #toasty::Relation>::One::from_stmt(
+                        <#target_ty as #toasty::Relation>::Model::filter(#filter).into_statement().into_query().unwrap()
                     )
                 }
             }
@@ -360,61 +371,31 @@ impl Expand<'_> {
         let vis = &self.model.vis;
         let field_ident = &field.name.ident;
         let ty = &rel.ty;
-        let model_ident = &self.model.ident;
-        let pair_ident = rel.pair.clone().unwrap_or(syn::Ident::new(
-            &self.model.name.ident.to_string(),
-            rel.span,
-        ));
+        let target = quote!(<#ty as #toasty::HasManyField>::Target);
 
-        let verify_pair_belongs_to_exists_for_field = syn::Ident::new(
-            &format!("verify_pair_belongs_to_exists_for_{pair_ident}"),
-            field_ident.span(),
-        );
-
-        let verify_a = util::ident("A");
-        let verify_t = util::ident("T");
-
-        let my_msg = format!(
-            "HasMany requires the {{{verify_a}}}::{pair_ident} field to be of type `BelongsTo<Self>`, but it was `{{Self}}` instead"
-        );
-        let my_label =
-            "Has many associations require the target to include a back-reference".to_string();
-
-        let pair_check = quote::quote_spanned! {rel.span=>
-            // Reference the field to generate a compiler error if it is missing.
-            #[allow(unreachable_code)]
-            if false {
-                fn load<#verify_t: #toasty::Model>() -> #verify_t {
-                    #verify_t::load(todo!()).unwrap()
-                }
-
-                #[diagnostic::on_unimplemented(
-                    message = #my_msg,
-                    label = #my_label,
-                    note = "Note 1",
-                    // note = "Note 2"
-                )]
-                trait Verify<#verify_a> {
-                }
-
-                #[diagnostic::do_not_recommend]
-                impl<#verify_a> Verify<#verify_a> for #toasty::BelongsTo<#model_ident> {
-                }
-
-                #[diagnostic::do_not_recommend]
-                impl<#verify_a> Verify<#verify_a> for #toasty::BelongsTo<Option<#model_ident>> {
-                }
-
-                fn verify<#verify_t: Verify<#verify_a>, #verify_a>(_: &#verify_t) {
-                }
-
-                let instance = load::<<#ty as #toasty::Relation>::Model>();
-                verify::<_, <#ty as #toasty::Relation>::Model>(instance.#verify_pair_belongs_to_exists_for_field());
-            }
+        // A `via` relation reaches its target through a path of existing
+        // relations; it has no paired `BelongsTo`, so skip the back-reference
+        // check that direct has-many relations emit.
+        let pair_check = if rel.via.is_some() {
+            quote! {}
+        } else {
+            let pair_ident = rel.pair.clone().unwrap_or(syn::Ident::new(
+                &self.model.name.ident.to_string(),
+                rel.span,
+            ));
+            self.expand_pair_belongs_to_check(PairBelongsToCheck {
+                pair_ident: &pair_ident,
+                field_ident,
+                ty,
+                field_trait: quote!(#toasty::HasManyField),
+                rel_span: rel.span,
+                relation_kind: "HasMany",
+                label: "Has many associations require the target to include a back-reference",
+            })
         };
 
         quote! {
-            #vis fn #field_ident(&self) -> <#ty as #toasty::Relation>::Many {
+            #vis fn #field_ident(&self) -> <#target as #toasty::Relation>::Many {
                 // Suppress the unused field warning
                 if false {
                     let _ = &self.#field_ident;
@@ -424,7 +405,7 @@ impl Expand<'_> {
 
                 {
                     use #toasty::IntoStatement;
-                    <#ty as #toasty::Relation>::Many::from_stmt(
+                    <#target as #toasty::Relation>::Many::from_stmt(
                         #toasty::stmt::Association::many(
                             self.into_statement().into_query().unwrap().to_list(),
                             Self::fields().#field_ident().into()
@@ -440,58 +421,31 @@ impl Expand<'_> {
         let vis = &self.model.vis;
         let field_ident = &field.name.ident;
         let ty = &rel.ty;
-        let model_ident = &self.model.ident;
-        let pair_ident = syn::Ident::new(&self.model.name.ident.to_string(), rel.span);
+        let target = quote!(<#ty as #toasty::HasOneField>::Target);
 
-        let verify_pair_belongs_to_exists_for_field = syn::Ident::new(
-            &format!("verify_pair_belongs_to_exists_for_{pair_ident}"),
-            field_ident.span(),
-        );
-
-        let verify_a = util::ident("A");
-        let verify_t = util::ident("T");
-
-        let my_msg = format!(
-            "HasOne requires the {{{verify_a}}}::{pair_ident} field to be of type `BelongsTo<Self>`, but it was `{{Self}}` instead"
-        );
-        let my_label =
-            "Has one associations require the target to include a back-reference".to_string();
-
-        let pair_check = quote::quote_spanned! {rel.span=>
-            // Reference the field to generate a compiler error if it is missing.
-            #[allow(unreachable_code)]
-            if false {
-                fn load<#verify_t: #toasty::Model>() -> #verify_t {
-                    #verify_t::load(todo!()).unwrap()
-                }
-
-                #[diagnostic::on_unimplemented(
-                    message = #my_msg,
-                    label = #my_label,
-                    note = "Note 1",
-                    // note = "Note 2"
-                )]
-                trait Verify<#verify_a> {
-                }
-
-                #[diagnostic::do_not_recommend]
-                impl<#verify_a> Verify<#verify_a> for #toasty::BelongsTo<#model_ident> {
-                }
-
-                #[diagnostic::do_not_recommend]
-                impl<#verify_a> Verify<#verify_a> for #toasty::BelongsTo<Option<#model_ident>> {
-                }
-
-                fn verify<#verify_t: Verify<#verify_a>, #verify_a>(_: &#verify_t) {
-                }
-
-                let instance = load::<<#ty as #toasty::Relation>::Model>();
-                verify::<_, <#ty as #toasty::Relation>::Model>(instance.#verify_pair_belongs_to_exists_for_field());
-            }
+        // A `via` relation reaches its target through a path of existing
+        // relations; it has no paired `BelongsTo`, so skip the back-reference
+        // check that direct has-one relations emit.
+        let pair_check = if rel.via.is_some() {
+            quote! {}
+        } else {
+            let pair_ident = rel.pair.clone().unwrap_or(syn::Ident::new(
+                &self.model.name.ident.to_string(),
+                rel.span,
+            ));
+            self.expand_pair_belongs_to_check(PairBelongsToCheck {
+                pair_ident: &pair_ident,
+                field_ident,
+                ty,
+                field_trait: quote!(#toasty::HasOneField),
+                rel_span: rel.span,
+                relation_kind: "HasOne",
+                label: "Has one associations require the target to include a back-reference",
+            })
         };
 
         quote! {
-            #vis fn #field_ident(&self) -> <#ty as #toasty::Relation>::One {
+            #vis fn #field_ident(&self) -> <#target as #toasty::Relation>::One {
                 // Suppress the unused field warning
                 if false {
                     let _ = &self.#field_ident;
@@ -501,13 +455,85 @@ impl Expand<'_> {
 
                 {
                     use #toasty::IntoStatement;
-                    <#ty as #toasty::Relation>::One::from_stmt(
+                    <#target as #toasty::Relation>::One::from_stmt(
                         #toasty::stmt::Association::one(
                             self.into_statement().into_query().unwrap().to_list(),
                             Self::fields().#field_ident().into()
                         ).into_statement().into_query().unwrap()
                     )
                 }
+            }
+        }
+    }
+
+    /// Emit a compile-time check that the target model has a
+    /// `Deferred<Self>` (or `Deferred<Option<Self>>`) belongs-to field named
+    /// `pair_ident`. Shared by the
+    /// has-many and has-one accessor expansions; the relation kind ("HasMany"
+    /// / "HasOne") and `label` are woven into the `on_unimplemented` diagnostic.
+    fn expand_pair_belongs_to_check(&self, check: PairBelongsToCheck<'_>) -> TokenStream {
+        let toasty = &self.toasty;
+        let model_ident = &self.model.ident;
+        let PairBelongsToCheck {
+            pair_ident,
+            field_ident,
+            ty,
+            field_trait,
+            rel_span,
+            relation_kind,
+            label,
+        } = check;
+
+        let verify_pair_belongs_to_exists_for_field = syn::Ident::new(
+            &format!("verify_pair_belongs_to_exists_for_{pair_ident}"),
+            field_ident.span(),
+        );
+
+        let verify_a = util::ident("A");
+        let verify_t = util::ident("T");
+
+        let msg = format!(
+            "{relation_kind} requires the {{{verify_a}}}::{pair_ident} field to be a relation to `Self`, but it was `{{Self}}` instead"
+        );
+
+        quote::quote_spanned! {rel_span=>
+            // Reference the field to generate a compiler error if it is missing.
+            #[allow(unreachable_code)]
+            if false {
+                fn load<#verify_t: #toasty::Model>() -> #verify_t {
+                    #verify_t::load(todo!()).unwrap()
+                }
+
+                #[diagnostic::on_unimplemented(
+                    message = #msg,
+                    label = #label,
+                    note = "Note 1",
+                    // note = "Note 2"
+                )]
+                trait Verify<#verify_a> {
+                }
+
+                #[diagnostic::do_not_recommend]
+                impl<#verify_a> Verify<#verify_a> for #toasty::Deferred<#model_ident> {
+                }
+
+                #[diagnostic::do_not_recommend]
+                impl<#verify_a> Verify<#verify_a> for #toasty::Deferred<Option<#model_ident>> {
+                }
+
+                #[diagnostic::do_not_recommend]
+                impl<#verify_a> Verify<#verify_a> for #model_ident {
+                }
+
+                #[diagnostic::do_not_recommend]
+                impl<#verify_a> Verify<#verify_a> for Option<#model_ident> {
+                }
+
+                fn verify<#verify_t: Verify<#verify_a>, #verify_a>(_: &#verify_t) {
+                }
+
+                let instance = load::<<<#ty as #field_trait>::Target as #toasty::Relation>::Model>();
+                verify::<_, <<#ty as #field_trait>::Target as #toasty::Relation>::Model>(instance.#verify_pair_belongs_to_exists_for_field());
             }
         }
     }

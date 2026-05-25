@@ -122,6 +122,19 @@ pub struct Capability {
     /// will not produce one.
     pub native_like: bool,
 
+    /// Whether the database has a native case-insensitive `LIKE` operator
+    /// (`ILIKE`). Only PostgreSQL has one.
+    ///
+    /// Toasty does not emulate `ILIKE` on backends that lack it: `.ilike()`
+    /// is a pass-through to the database's own operator. When `native_ilike`
+    /// is `false`, the query-verify pass rejects a case-insensitive
+    /// `Expr::Like` with an
+    /// [`unsupported_feature`](crate::Error::unsupported_feature) error rather
+    /// than silently degrading to plain `LIKE`, whose case behavior differs.
+    ///
+    /// Implies `native_like`.
+    pub native_ilike: bool,
+
     /// Whether the driver can answer queries that don't match any primary key
     /// or index — i.e. supports unindexed full-table reads.
     ///
@@ -145,6 +158,14 @@ pub struct Capability {
     /// Whether to test connection pool behavior.
     /// TODO: We only need this for the `connection_per_clone.rs` test, come up with a better way.
     pub test_connection_pool: bool,
+
+    /// Whether the driver honors non-`Default`
+    /// [`TransactionMode`](super::operation::TransactionMode) variants
+    /// (`Immediate`, `Exclusive`). Currently `true` only for SQLite, which
+    /// maps them to `BEGIN IMMEDIATE` / `BEGIN EXCLUSIVE`. Drivers that
+    /// leave this `false` reject non-`Default` modes with
+    /// [`Error::unsupported_feature`](crate::Error::unsupported_feature).
+    pub transaction_lock_mode: bool,
 
     /// Whether the backend can walk a paginated query in reverse from a
     /// cursor.
@@ -362,6 +383,14 @@ impl Capability {
             ));
         }
 
+        // ILIKE is a case-insensitive LIKE; a backend cannot offer it without
+        // a native LIKE.
+        if self.native_ilike && !self.native_like {
+            return Err(crate::Error::invalid_driver_configuration(
+                "native_ilike is true but native_like is false",
+            ));
+        }
+
         Ok(())
     }
 
@@ -434,11 +463,19 @@ impl Capability {
         native_starts_with: false,
         native_like: true,
 
+        // SQLite's `LIKE` is case-insensitive for ASCII only; it has no
+        // `ILIKE` operator, so `.ilike()` is rejected here.
+        native_ilike: false,
+
         // SQL drivers handle unindexed queries via QuerySql (see field doc).
         scan: true,
         scan_supports_sort: true,
 
         test_connection_pool: false,
+
+        // SQLite exposes `BEGIN DEFERRED|IMMEDIATE|EXCLUSIVE` for
+        // lock-acquisition policy.
+        transaction_lock_mode: true,
 
         backward_pagination: true,
 
@@ -482,6 +519,9 @@ impl Capability {
         // PostgreSQL has the `^@` prefix-match operator.
         native_starts_with: true,
 
+        // PostgreSQL is the only backend with a native `ILIKE` operator.
+        native_ilike: true,
+
         // PostgreSQL has CREATE TYPE ... AS ENUM
         native_enum: true,
         named_enum_types: true,
@@ -497,6 +537,9 @@ impl Capability {
         decimal_arbitrary_precision: true,
 
         test_connection_pool: true,
+
+        // PostgreSQL has no SQLite-style lock-mode keyword on BEGIN.
+        transaction_lock_mode: false,
 
         // PostgreSQL accepts a single array-valued bind param and supports
         // `expr <op> ANY(array)` / `<op> ALL(array)` predicates.
@@ -543,6 +586,9 @@ impl Capability {
 
         test_connection_pool: true,
 
+        // MySQL has no SQLite-style lock-mode keyword on START TRANSACTION.
+        transaction_lock_mode: false,
+
         // `Vec<scalar>` model fields land in a `JSON` column. The driver
         // serializes `Value::List` to a JSON string at bind time, so the
         // extract pass keeps the list as one `Value::List` parameter
@@ -552,6 +598,26 @@ impl Capability {
         bind_list_param: true,
         vec_scalar: true,
 
+        ..Self::SQLITE
+    };
+
+    /// Turso capabilities.
+    ///
+    /// Identical to [`SQLITE`](Self::SQLITE) at the flag level. The driver
+    /// extends SQLite's behavior in two ways that don't fit a capability
+    /// bit:
+    ///
+    /// * It opens a real async connection per pool slot (sharing a cached
+    ///   `Database` across `connect()` calls), so the connection-pool test
+    ///   suite applies.
+    /// * When `Turso::concurrent_writes()` is enabled, the driver issues
+    ///   `BEGIN CONCURRENT` for `TransactionMode::Default`, opting the
+    ///   transaction into Turso's MVCC concurrency. The other
+    ///   `TransactionMode` variants pass through to the SQLite serializer
+    ///   unchanged, so callers can still request the classic locking
+    ///   strategies per transaction.
+    pub const TURSO: Self = Self {
+        test_connection_pool: true,
         ..Self::SQLITE
     };
 
@@ -582,14 +648,18 @@ impl Capability {
 
         index_or_predicate: false,
 
-        // DynamoDB has `begins_with()` but no LIKE.
+        // DynamoDB has `begins_with()` but no LIKE or ILIKE.
         native_starts_with: true,
         native_like: false,
+        native_ilike: false,
 
         scan: true,
         scan_supports_sort: false,
 
         test_connection_pool: false,
+
+        // DynamoDB rejects `Operation::Transaction` wholesale.
+        transaction_lock_mode: false,
 
         backward_pagination: false,
 

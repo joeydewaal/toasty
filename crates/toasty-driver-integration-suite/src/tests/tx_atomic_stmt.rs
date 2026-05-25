@@ -21,7 +21,8 @@ pub async fn multi_op_create_wraps_in_transaction(t: &mut Test) -> Result<()> {
         t.log().pop_op(),
         Operation::Transaction(Transaction::Start {
             isolation: None,
-            read_only: false
+            read_only: false,
+            ..
         })
     );
     assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // INSERT user
@@ -74,7 +75,7 @@ pub async fn create_with_has_many_rolls_back_on_failure(t: &mut Test) -> Result<
         id: u64,
 
         #[has_many]
-        todos: toasty::HasMany<Todo>,
+        todos: toasty::Deferred<Vec<Todo>>,
     }
 
     #[derive(Debug, toasty::Model)]
@@ -87,7 +88,7 @@ pub async fn create_with_has_many_rolls_back_on_failure(t: &mut Test) -> Result<
         user_id: u64,
 
         #[belongs_to(key = user_id, references = id)]
-        user: toasty::BelongsTo<User>,
+        user: toasty::Deferred<User>,
 
         #[unique]
         title: String,
@@ -115,7 +116,8 @@ pub async fn create_with_has_many_rolls_back_on_failure(t: &mut Test) -> Result<
         t.log().pop_op(),
         Operation::Transaction(Transaction::Start {
             isolation: None,
-            read_only: false
+            read_only: false,
+            ..
         })
     );
     assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // INSERT user
@@ -148,7 +150,7 @@ pub async fn create_with_has_one_rolls_back_on_failure(t: &mut Test) -> Result<(
         id: u64,
 
         #[has_one]
-        profile: toasty::HasOne<Option<Profile>>,
+        profile: toasty::Deferred<Option<Profile>>,
     }
 
     #[derive(Debug, toasty::Model)]
@@ -164,7 +166,7 @@ pub async fn create_with_has_one_rolls_back_on_failure(t: &mut Test) -> Result<(
         user_id: u64,
 
         #[belongs_to(key = user_id, references = id)]
-        user: toasty::BelongsTo<User>,
+        user: toasty::Deferred<User>,
     }
 
     let mut db = t.setup_db(models!(User, Profile)).await;
@@ -187,7 +189,8 @@ pub async fn create_with_has_one_rolls_back_on_failure(t: &mut Test) -> Result<(
         t.log().pop_op(),
         Operation::Transaction(Transaction::Start {
             isolation: None,
-            read_only: false
+            read_only: false,
+            ..
         })
     );
     assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // INSERT user
@@ -223,7 +226,7 @@ pub async fn update_with_new_association_rolls_back_on_failure(t: &mut Test) -> 
         name: String,
 
         #[has_many]
-        todos: toasty::HasMany<Todo>,
+        todos: toasty::Deferred<Vec<Todo>>,
     }
 
     #[derive(Debug, toasty::Model)]
@@ -236,7 +239,7 @@ pub async fn update_with_new_association_rolls_back_on_failure(t: &mut Test) -> 
         user_id: ID,
 
         #[belongs_to(key = user_id, references = id)]
-        user: toasty::BelongsTo<User>,
+        user: toasty::Deferred<User>,
 
         title: String,
     }
@@ -262,7 +265,8 @@ pub async fn update_with_new_association_rolls_back_on_failure(t: &mut Test) -> 
         t.log().pop_op(),
         Operation::Transaction(Transaction::Start {
             isolation: None,
-            read_only: false
+            read_only: false,
+            ..
         })
     );
     assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // INSERT todo (rolled back)
@@ -294,7 +298,7 @@ pub async fn rmw_uses_savepoints(t: &mut Test) -> Result<()> {
         id: ID,
 
         #[has_many]
-        todos: toasty::HasMany<Todo>,
+        todos: toasty::Deferred<Vec<Todo>>,
     }
 
     #[derive(Debug, toasty::Model)]
@@ -307,7 +311,7 @@ pub async fn rmw_uses_savepoints(t: &mut Test) -> Result<()> {
         user_id: Option<ID>,
 
         #[belongs_to(key = user_id, references = id)]
-        user: toasty::BelongsTo<Option<User>>,
+        user: toasty::Deferred<Option<User>>,
     }
 
     let mut db = t.setup_db(models!(User, Todo)).await;
@@ -327,7 +331,8 @@ pub async fn rmw_uses_savepoints(t: &mut Test) -> Result<()> {
             t.log().pop_op(),
             Operation::Transaction(Transaction::Start {
                 isolation: None,
-                read_only: false
+                read_only: false,
+                ..
             })
         );
         assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // read
@@ -354,7 +359,7 @@ pub async fn rmw_condition_failure_issues_rollback_to_savepoint(t: &mut Test) ->
         id: ID,
 
         #[has_many]
-        todos: toasty::HasMany<Todo>,
+        todos: toasty::Deferred<Vec<Todo>>,
     }
 
     #[derive(Debug, toasty::Model)]
@@ -367,7 +372,7 @@ pub async fn rmw_condition_failure_issues_rollback_to_savepoint(t: &mut Test) ->
         user_id: Option<ID>,
 
         #[belongs_to(key = user_id, references = id)]
-        user: toasty::BelongsTo<Option<User>>,
+        user: toasty::Deferred<Option<User>>,
     }
 
     let mut db = t.setup_db(models!(User, Todo)).await;
@@ -390,7 +395,8 @@ pub async fn rmw_condition_failure_issues_rollback_to_savepoint(t: &mut Test) ->
             t.log().pop_op(),
             Operation::Transaction(Transaction::Start {
                 isolation: None,
-                read_only: false
+                read_only: false,
+                ..
             })
         );
         assert_struct!(t.log().pop_op(), Operation::QuerySql(_)); // read

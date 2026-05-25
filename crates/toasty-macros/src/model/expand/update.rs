@@ -51,14 +51,15 @@ impl Expand<'_> {
             match &field.ty {
             FieldTy::BelongsTo(rel) => {
                 let ty = &rel.ty;
+                let target = quote!(<#ty as #toasty::BelongsToField>::Target);
 
                 quote! {
-                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Relation>::Expr>) -> Self {
+                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<<#target as #toasty::Relation>::Expr>) -> Self {
                         self.#set_field_ident(#field_ident);
                         self
                     }
 
-                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Relation>::Expr>) -> &mut Self {
+                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<<#target as #toasty::Relation>::Expr>) -> &mut Self {
                         let projection = #projection;
                         #field_ident.assign(&mut self.assignments, projection);
                         self
@@ -67,14 +68,15 @@ impl Expand<'_> {
             }
             FieldTy::HasMany(rel) => {
                 let ty = &rel.ty;
+                let target = quote!(<#ty as #toasty::HasManyField>::Target);
 
                 quote! {
-                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<#toasty::List<<#ty as #toasty::Relation>::Expr>>) -> Self {
+                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<#toasty::List<<#target as #toasty::Relation>::Expr>>) -> Self {
                         self.#set_field_ident(#field_ident);
                         self
                     }
 
-                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<#toasty::List<<#ty as #toasty::Relation>::Expr>>) -> &mut Self {
+                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<#toasty::List<<#target as #toasty::Relation>::Expr>>) -> &mut Self {
                         let projection = #projection;
                         #field_ident.assign(&mut self.assignments, projection);
                         self
@@ -83,56 +85,18 @@ impl Expand<'_> {
             }
             FieldTy::HasOne(rel) => {
                 let ty = &rel.ty;
+                let target = quote!(<#ty as #toasty::HasOneField>::Target);
 
                 quote! {
-                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Relation>::Expr>) -> Self {
+                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<<#target as #toasty::Relation>::Expr>) -> Self {
                         self.#set_field_ident(#field_ident);
                         self
                     }
 
-                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Relation>::Expr>) -> &mut Self {
+                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<<#target as #toasty::Relation>::Expr>) -> &mut Self {
                         let projection = #projection;
                         #field_ident.assign(&mut self.assignments, projection);
                         self
-                    }
-                }
-            }
-            FieldTy::Primitive(ty) if field.attrs.serialize.is_some() => {
-                let serialize_attr = field.attrs.serialize.as_ref().unwrap();
-                if serialize_attr.nullable {
-                    quote! {
-                        #vis fn #field_ident(mut self, #field_ident: #ty) -> Self {
-                            self.#set_field_ident(#field_ident);
-                            self
-                        }
-
-                        #vis fn #set_field_ident(&mut self, #field_ident: #ty) -> &mut Self {
-                            let projection = #projection;
-                            match &#field_ident {
-                                Some(v) => {
-                                    let json = #toasty::serde_json::to_string(v).expect("failed to serialize");
-                                    self.assignments.set(projection, <String as #toasty::IntoExpr<String>>::into_expr(json));
-                                }
-                                None => {
-                                    self.assignments.set(projection, #toasty::stmt::Expr::<String>::from_untyped(#toasty::core::stmt::Expr::Value(#toasty::core::stmt::Value::Null)));
-                                }
-                            }
-                            self
-                        }
-                    }
-                } else {
-                    quote! {
-                        #vis fn #field_ident(mut self, #field_ident: #ty) -> Self {
-                            self.#set_field_ident(#field_ident);
-                            self
-                        }
-
-                        #vis fn #set_field_ident(&mut self, #field_ident: #ty) -> &mut Self {
-                            let projection = #projection;
-                            let json = #toasty::serde_json::to_string(&#field_ident).expect("failed to serialize");
-                            self.assignments.set(projection, <String as #toasty::IntoExpr<String>>::into_expr(json));
-                            self
-                        }
                     }
                 }
             }
@@ -156,12 +120,12 @@ impl Expand<'_> {
                 // accepts whatever its expression-level type permits —
                 // `Self` for scalars, `List<T>` for `Vec<T: Scalar>`.
                 quote! {
-                    #vis fn #field_ident(mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Field>::ExprTarget>) -> Self {
+                    #vis fn #field_ident(mut self, #field_ident: impl Assign<FieldExprTarget<#ty>>) -> Self {
                         self.#set_field_ident(#field_ident);
                         self
                     }
 
-                    #vis fn #set_field_ident(&mut self, #field_ident: impl #toasty::Assign<<#ty as #toasty::Field>::ExprTarget>) -> &mut Self {
+                    #vis fn #set_field_ident(&mut self, #field_ident: impl Assign<FieldExprTarget<#ty>>) -> &mut Self {
                         let projection = #projection;
                         #field_ident.assign(&mut self.assignments, projection);
                         self
@@ -185,14 +149,19 @@ impl Expand<'_> {
         let field = &self.model.fields[version_index];
         let index_tokenized = util::int(version_index);
         let field_ident = &field.name.ident;
+        let FieldTy::Primitive(field_ty) = &field.ty else {
+            unreachable!("version field must be primitive");
+        };
 
         quote! {
             {
-                let current = s.target.#field_ident;
+                let current: u64 = <#field_ty as #toasty::Version>::as_u64(s.target.#field_ident);
+                let next = <#field_ty as #toasty::Version>::from_u64(current + 1);
                 s.assignments.set(
                     #toasty::stmt::Projection::from_index(#index_tokenized),
-                    <u64 as #toasty::IntoExpr<u64>>::into_expr(current + 1),
+                    <#field_ty as #toasty::IntoExpr<#field_ty>>::into_expr(next),
                 );
+                let current_val = <#field_ty as #toasty::Version>::from_u64(current);
                 s.condition = Some(
                     #toasty::core::stmt::Expr::eq(
                         #toasty::core::stmt::Expr::Reference(
@@ -201,9 +170,7 @@ impl Expand<'_> {
                                 index: #index_tokenized,
                             }
                         ),
-                        #toasty::core::stmt::Expr::Value(
-                            #toasty::core::stmt::Value::U64(current)
-                        ),
+                        #toasty::into_untyped_expr::<#field_ty, _>(current_val),
                     )
                 );
             }
@@ -367,41 +334,22 @@ impl Expand<'_> {
         self.model.fields.iter().enumerate().map(|(offset, field)| {
             let i = util::int(offset);
             let field_ident = &field.name.ident;
-            let field_name_str = field.name.as_str();
 
             match &field.ty {
-                FieldTy::Primitive(_ty) if field.attrs.serialize.is_some() => {
-                    let serialize_attr = field.attrs.serialize.as_ref().unwrap();
-
-                    let json_deserialize = quote! {
-                        let json_str = <String as #toasty::Load>::load(value)?;
-                        #toasty::serde_json::from_str(&json_str)
-                            .map_err(|e| #toasty::Error::from_args(
-                                format_args!("failed to deserialize field '{}': {}", #field_name_str, e)
-                            ))?
-                    };
-
-                    let assign = if serialize_attr.nullable {
-                        quote! {
-                            if value.is_null() { None } else { Some({ #json_deserialize }) }
-                        }
-                    } else {
-                        quote! { { #json_deserialize } }
-                    };
-
-                    quote! {
-                        #i => {
-                            target.#field_ident = #assign;
-                        }
-                    }
-                }
                 FieldTy::Primitive(ty) => {
                     quote!(#i => <#ty as #toasty::Load>::reload(&mut target.#field_ident, value)?,)
                 }
-                _ => {
-                    // Relation fields (BelongsTo, HasMany, HasOne) are unloaded on update.
-                    // Embedded fields are handled above via the Primitive arm.
-                    quote!(#i => target.#field_ident.unload(),)
+                FieldTy::BelongsTo(rel) => {
+                    let ty = &rel.ty;
+                    quote!(#i => <#ty as #toasty::BelongsToField>::reload(&mut target.#field_ident, value)?,)
+                }
+                FieldTy::HasMany(rel) => {
+                    let ty = &rel.ty;
+                    quote!(#i => <#ty as #toasty::HasManyField>::reload(&mut target.#field_ident, value)?,)
+                }
+                FieldTy::HasOne(rel) => {
+                    let ty = &rel.ty;
+                    quote!(#i => <#ty as #toasty::HasOneField>::reload(&mut target.#field_ident, value)?,)
                 }
             }
 

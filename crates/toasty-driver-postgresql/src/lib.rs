@@ -25,8 +25,14 @@ use percent_encoding::percent_decode_str;
 use std::{borrow::Cow, sync::Arc};
 use toasty_core::{
     Result, Schema,
-    driver::{Capability, Driver, ExecResponse, Operation},
-    schema::db::{self, Migration, SchemaDiff, Table},
+    driver::{
+        Capability, Driver, ExecResponse, Operation,
+        operation::{Transaction, TransactionMode},
+    },
+    schema::{
+        db::{self, Migration, Table},
+        diff,
+    },
     stmt,
     stmt::ValueRecord,
 };
@@ -67,12 +73,28 @@ fn classify_pg_error(e: tokio_postgres::Error) -> toasty_core::Error {
 ///
 /// let driver = PostgreSQL::new("postgresql://localhost/mydb").unwrap();
 /// ```
-#[derive(Debug)]
 pub struct PostgreSQL {
     url: String,
     config: Config,
     #[cfg(feature = "tls")]
-    tls: Option<tls::MakeRustlsConnect>,
+    tls: Option<tokio_postgres_rustls::MakeRustlsConnect>,
+}
+
+impl std::fmt::Debug for PostgreSQL {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            url,
+            config,
+            #[cfg(feature = "tls")]
+            tls,
+        } = self;
+        let mut s = f.debug_struct("PostgreSQL");
+        s.field("url", url);
+        s.field("config", config);
+        #[cfg(feature = "tls")]
+        s.field("tls", &tls.as_ref().map(|_| "MakeRustlsConnect"));
+        s.finish()
+    }
 }
 
 impl PostgreSQL {
@@ -180,7 +202,7 @@ impl Driver for PostgreSQL {
         ))
     }
 
-    fn generate_migration(&self, schema_diff: &SchemaDiff<'_>) -> Migration {
+    fn generate_migration(&self, schema_diff: &diff::Schema<'_>) -> Migration {
         let statements = sql::MigrationStatement::from_diff(schema_diff, &Capability::POSTGRESQL);
 
         let sql_strings: Vec<String> = statements
@@ -333,6 +355,18 @@ impl toasty_core::driver::Connection for Connection {
         tracing::trace!(driver = "postgresql", op = %op.name(), "driver exec");
 
         if let Operation::Transaction(ref t) = op {
+            // PostgreSQL has no `BEGIN IMMEDIATE` / `BEGIN EXCLUSIVE`
+            // analogue; reject non-Default modes loudly rather than
+            // silently dropping them at the serializer.
+            if let Transaction::Start {
+                mode: mode @ (TransactionMode::Immediate | TransactionMode::Exclusive),
+                ..
+            } = t
+            {
+                return Err(toasty_core::Error::unsupported_feature(format!(
+                    "PostgreSQL does not support TransactionMode::{mode:?}"
+                )));
+            }
             let sql = sql::Serializer::postgresql(&schema.db).serialize_transaction(t);
             self.client
                 .batch_execute(&sql)

@@ -1,8 +1,5 @@
 use super::{Expand, util};
-use crate::model::schema::SerializeAttr;
-use crate::model::schema::{
-    AutoStrategy, Column, FieldTy, ModelKind, Name, SerializeFormat, UuidVersion,
-};
+use crate::model::schema::{AutoStrategy, Column, FieldTy, ModelKind, Name, UuidVersion};
 
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
@@ -80,6 +77,7 @@ impl Expand<'_> {
             let index_tokenized = util::int(index);
             let field_ty;
             let nullable;
+            let deferred;
 
             let field_named = match &self.model.kind {
                 ModelKind::Root(_) => true,
@@ -121,29 +119,10 @@ impl Expand<'_> {
                         _ => quote!(None),
                     };
 
-                    match &field.attrs.serialize {
-                        Some(SerializeAttr { format, nullable: serialize_nullable }) => {
-                            let serialize_format = match format {
-                                SerializeFormat::Json => {
-                                    quote!(Some(#toasty::core::schema::app::SerializeFormat::Json))
-                                }
-                            };
-                            let nullable_lit = *serialize_nullable;
-
-                            nullable = quote!(#nullable_lit);
-                            field_ty = quote!(#toasty::core::schema::app::FieldTy::Primitive(
-                                #toasty::core::schema::app::FieldPrimitive {
-                                    ty: #toasty::core::stmt::Type::String,
-                                    storage_ty: #storage_ty,
-                                    serialize: #serialize_format,
-                                }
-                            ));
-                        }
-                        None => {
-                            nullable = quote!(<#ty as #toasty::Field>::NULLABLE);
-                            field_ty = quote!(<#ty as #toasty::Field>::field_ty(#storage_ty));
-                        }
-                    }
+                    nullable = quote!(<#ty as #toasty::Field>::NULLABLE);
+                    let deferred_attr = field.attrs.deferred;
+                    deferred = quote!(#deferred_attr);
+                    field_ty = quote!(<#ty as #toasty::Field>::field_ty(#storage_ty));
                 }
                 FieldTy::BelongsTo(rel) => {
                     let ty = &rel.ty;
@@ -158,13 +137,17 @@ impl Expand<'_> {
                                     model: #model_ident::id(),
                                     index: #source,
                                 },
-                                target: <#ty as #toasty::Relation>::field_name_to_id(#target),
+                                target: {
+                                    type __RelationTarget = <#ty as #toasty::BelongsToField>::Target;
+                                    <__RelationTarget as #toasty::Relation>::field_name_to_id(#target)
+                                },
                             }
                         }
                     });
 
-                    nullable = quote!(<#ty as #toasty::Relation>::nullable());
-                    field_ty = quote!(<#ty as #toasty::Relation>::belongs_to_field_ty(
+                    nullable = quote!(<#ty as #toasty::BelongsToField>::nullable());
+                    deferred = quote!(<#ty as #toasty::BelongsToField>::DEFERRED);
+                    field_ty = quote!(<#ty as #toasty::BelongsToField>::belongs_to_field_ty(
                         #toasty::core::schema::app::ForeignKey {
                             fields: vec![ #( #fk_fields ),* ],
                         },
@@ -173,17 +156,21 @@ impl Expand<'_> {
                 FieldTy::HasMany(rel) => {
                     let ty = &rel.ty;
                     let singular_name = expand_name(toasty, &rel.singular);
-                    let pair = expand_pair(toasty, ty, rel.pair.as_ref());
+                    let pair = expand_pair(toasty, quote!(#toasty::HasManyField), ty, rel.pair.as_ref());
+                    let via = expand_via(toasty, model_ident, rel.via.as_ref());
 
-                    nullable = quote!(<#ty as #toasty::Relation>::nullable());
-                    field_ty = quote!(<#ty as #toasty::Relation>::has_many_field_ty(#singular_name, #pair));
+                    nullable = quote!(<#ty as #toasty::HasManyField>::nullable());
+                    deferred = quote!(<#ty as #toasty::HasManyField>::DEFERRED);
+                    field_ty = quote!(<#ty as #toasty::HasManyField>::has_many_field_ty(#singular_name, #pair, #via));
                 }
                 FieldTy::HasOne(rel) => {
                     let ty = &rel.ty;
-                    let pair = expand_pair(toasty, ty, rel.pair.as_ref());
+                    let pair = expand_pair(toasty, quote!(#toasty::HasOneField), ty, rel.pair.as_ref());
+                    let via = expand_via(toasty, model_ident, rel.via.as_ref());
 
-                    nullable = quote!(<#ty as #toasty::Relation>::nullable());
-                    field_ty = quote!(<#ty as #toasty::Relation>::has_one_field_ty(#pair));
+                    nullable = quote!(<#ty as #toasty::HasOneField>::nullable());
+                    deferred = quote!(<#ty as #toasty::HasOneField>::DEFERRED);
+                    field_ty = quote!(<#ty as #toasty::HasOneField>::has_one_field_ty(#pair, #via));
                 }
             }
 
@@ -209,7 +196,6 @@ impl Expand<'_> {
             };
 
             let versionable = field.attrs.versionable;
-            let deferred = field.attrs.deferred;
 
             quote! {
                 #toasty::core::schema::app::Field {
@@ -350,12 +336,6 @@ impl Expand<'_> {
         let toasty = &self.toasty;
 
         let checks = self.model.fields.iter().filter_map(|field| {
-            // `#[serialize]` stores the field as a JSON string regardless of
-            // the underlying Rust type — skip the storage compat check.
-            if field.attrs.serialize.is_some() {
-                return None;
-            }
-
             let FieldTy::Primitive(ty) = &field.ty else {
                 return None;
             };
@@ -418,6 +398,36 @@ impl Expand<'_> {
         quote! { #( #checks )* }
     }
 
+    /// Emit a compile-time obligation that every `#[version]` field's Rust type
+    /// implements [`Version`].
+    ///
+    /// The bare `u64` type satisfies the bound directly; tuple-newtype embeds
+    /// satisfy it via the blanket in `codegen_support::version`. Any other type
+    /// produces a compiler error with the `#[diagnostic::on_unimplemented]`
+    /// message on [`Version`].
+    pub(super) fn expand_version_compat_checks(&self) -> TokenStream {
+        let toasty = &self.toasty;
+
+        let checks = self.model.fields.iter().filter_map(|field| {
+            if !field.attrs.versionable {
+                return None;
+            }
+
+            let FieldTy::Primitive(ty) = &field.ty else {
+                return None;
+            };
+
+            Some(quote_spanned! { ty.span()=>
+                const _: () = {
+                    fn _check<__T: #toasty::Version>() {}
+                    let _ = _check::<#ty>;
+                };
+            })
+        });
+
+        quote! { #( #checks )* }
+    }
+
     /// Generate calls to register all models reachable from this model's fields.
     ///
     /// For primitive fields, no call is emitted (the default `Field::register`
@@ -430,36 +440,40 @@ impl Expand<'_> {
         self.model
             .fields
             .iter()
-            .filter_map(|field| match &field.ty {
+            .map(|field| match &field.ty {
                 FieldTy::Primitive(ty) => {
-                    // Fields with #[serialize] store arbitrary types as JSON
-                    // strings — they don't implement Field.
-                    if field.attrs.serialize.is_some() {
-                        return None;
-                    }
                     // Primitives use Field::register which delegates to inner
                     // type if it's an embedded type (via the Field impl).
-                    Some(quote! {
+                    quote! {
                         <#ty as #toasty::Field>::register(model_set);
-                    })
+                    }
                 }
                 FieldTy::BelongsTo(rel) => {
                     let ty = &rel.ty;
-                    Some(quote! {
-                        <<#ty as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
-                    })
+                    quote! {
+                        {
+                            type __RelationTarget = <#ty as #toasty::BelongsToField>::Target;
+                            <<__RelationTarget as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
+                        }
+                    }
                 }
                 FieldTy::HasMany(rel) => {
                     let ty = &rel.ty;
-                    Some(quote! {
-                        <<#ty as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
-                    })
+                    quote! {
+                        {
+                            type __RelationTarget = <#ty as #toasty::HasManyField>::Target;
+                            <<__RelationTarget as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
+                        }
+                    }
                 }
                 FieldTy::HasOne(rel) => {
                     let ty = &rel.ty;
-                    Some(quote! {
-                        <<#ty as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
-                    })
+                    quote! {
+                        {
+                            type __RelationTarget = <#ty as #toasty::HasOneField>::Target;
+                            <<__RelationTarget as #toasty::Relation>::Model as #toasty::Register>::register(model_set);
+                        }
+                    }
                 }
             })
             .collect()
@@ -481,14 +495,53 @@ pub(super) fn expand_name(toasty: &TokenStream, name: &Name) -> TokenStream {
 
 fn expand_pair(
     toasty: &TokenStream,
+    field_trait: TokenStream,
     target_ty: &syn::Type,
     pair: Option<&syn::Ident>,
 ) -> TokenStream {
     match pair {
         Some(ident) => {
             let name = ident.to_string();
-            quote! { Some(<#target_ty as #toasty::Relation>::field_name_to_id(#name)) }
+            quote! {
+                Some({
+                    type __RelationTarget = <#target_ty as #field_trait>::Target;
+                    <__RelationTarget as #toasty::Relation>::field_name_to_id(#name)
+                })
+            }
         }
         None => quote! { None },
+    }
+}
+
+/// Emit the `via` argument for `has_many_field_ty` / `has_one_field_ty`: a
+/// fully resolved [`stmt::Path`] built by chaining the named segments onto the
+/// model's `Fields` struct (e.g. `User::fields().comments().article()`).
+///
+/// Resolution happens at Rust-compile time — a misspelled segment surfaces as
+/// "no method named `foo` found for struct `UserFields`", not as a runtime
+/// schema validation error. The two `.into()` conversions go via
+/// `FieldsStruct: Into<Path<Origin, T>>` and `Path<T, U>: Into<stmt::Path>`;
+/// the intermediate `Path<#model_ident, _>` ascription is what disambiguates
+/// them.
+fn expand_via(
+    toasty: &TokenStream,
+    model_ident: &syn::Ident,
+    via: Option<&Vec<syn::Ident>>,
+) -> TokenStream {
+    let Some(segments) = via else {
+        return quote! { None };
+    };
+
+    let mut chain = quote! { #model_ident::fields() };
+    for segment in segments {
+        chain = quote_spanned! { segment.span()=> #chain.#segment() };
+    }
+
+    quote! {
+        Some({
+            let __via_typed: #toasty::Path<#model_ident, _> = (#chain).into();
+            let __via_untyped: #toasty::core::stmt::Path = __via_typed.into();
+            __via_untyped
+        })
     }
 }

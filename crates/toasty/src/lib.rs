@@ -25,10 +25,10 @@
 //! [`Auto`](schema::Auto), a wrapper for auto-generated values such as
 //! database-assigned IDs.
 //!
-//! The module also provides the types that represent associations between
-//! models: [`HasMany`](schema::HasMany), [`HasOne`](schema::HasOne), and
-//! [`BelongsTo`](schema::BelongsTo). These appear as fields on model structs
-//! and are populated through the generated relation accessors.
+//! Relation fields can use [`Deferred`](schema::Deferred) for lazy loading or
+//! direct relation values for eager loading. Lazy relations are populated
+//! through `.include(...)` or generated relation accessors. Eager relations are
+//! loaded whenever the model is loaded.
 //!
 //! The module also re-exports from `toasty-core` for inspecting the
 //! app-level and db-level schema representations at runtime.
@@ -84,6 +84,7 @@
 //! | `postgresql`   | `toasty-driver-postgresql`   |
 //! | `mysql`        | `toasty-driver-mysql`        |
 //! | `dynamodb`     | `toasty-driver-dynamodb`     |
+//! | `turso`        | `toasty-driver-turso`        |
 //!
 //! Additional feature flags: `rust_decimal`, `bigdecimal`, `jiff` (date/time
 //! via the `jiff` crate), and `serde` (JSON serialization support).
@@ -114,14 +115,20 @@ pub use db::{Connection, Db, Executor, Transaction, TransactionBuilder};
 
 mod engine;
 
+/// Schema migration types: history files, snapshots, and generation helpers.
+#[cfg(feature = "migration")]
+pub mod migration;
+
 /// Model, relation, and schema inspection types.
 pub mod schema;
-pub use schema::{BelongsTo, Deferred, HasMany, HasOne};
+pub use schema::Deferred;
 
 // `Page` lives in `stmt`.
 
 /// Typed statement, expression, and query builder types.
 pub mod stmt;
+#[cfg(feature = "serde")]
+pub use stmt::Json;
 pub use stmt::Statement;
 
 pub use toasty_macros::{Embed, Model, create, query};

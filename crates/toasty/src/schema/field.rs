@@ -8,6 +8,14 @@ use toasty_core::schema::app::ModelSet;
 /// app schema (nullability, [`FieldTy`](toasty_core::schema::app::FieldTy)) as
 /// well as runtime helpers for building field paths and update builders.
 /// It is used by the `Register::schema()` implementation that the macro expands.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be used as a field type",
+    label = "this field's type is not storable",
+    note = "If `{Self}` is a Toasty model, this is a relation field and must be annotated \
+            with `#[belongs_to]`, `#[has_one]`, or `#[has_many]`.",
+    note = "Otherwise `{Self}` must be a supported primitive (string, integer, bool, uuid, \
+            …) or a wrapper around one (`Option<_>`, `Vec<_>`, `Box<_>`, `Arc<_>`, `Rc<_>`)."
+)]
 pub trait Field: Load {
     /// The expression-level type of this field.
     ///
@@ -282,6 +290,16 @@ impl<T: Field> Field for Option<T> {
         _assignments: &'a mut toasty_core::stmt::Assignments,
         _projection: toasty_core::stmt::Projection,
     ) -> Self::Update<'a> {
+    }
+
+    /// Delegate the field-type description to `T` so wrappers carrying
+    /// schema-relevant metadata (e.g. `Json<U>::serialize = Some(Json)`)
+    /// propagate through `Option<_>` instead of getting flattened to the
+    /// default `serialize: None`.
+    fn field_ty(
+        storage_ty: Option<toasty_core::schema::db::Type>,
+    ) -> toasty_core::schema::app::FieldTy {
+        T::field_ty(storage_ty)
     }
 
     fn key_constraint<Origin>(&self, target: stmt::Path<Origin, Self::Inner>) -> Expr<bool> {

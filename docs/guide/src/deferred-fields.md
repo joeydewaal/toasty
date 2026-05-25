@@ -10,8 +10,8 @@ read: a `Document` body, a binary blob, an audit-event JSON payload.
 Without the deferred annotation, every list query reads every column
 whether the caller needs it or not.
 
-The API mirrors `BelongsTo`: a synchronous `.get()` reads an
-already-loaded value, an async per-field accessor loads on demand, and
+The API mirrors relation fields wrapped in `Deferred<_>`: a synchronous `.get()`
+reads an already-loaded value, an async per-field accessor loads on demand, and
 `.include()` preloads as part of the parent query.
 
 ## Marking a field as deferred
@@ -97,8 +97,8 @@ let body: &String = doc.body.get();   // synchronous, no query
 
 `#[deferred]` is supported on primitive fields and on embedded types
 (`#[derive(Embed)]` structs and enums). It does not compose with
-`#[belongs_to]`, `#[has_many]`, or `#[has_one]` — relations are already
-lazy.
+`#[belongs_to]`, `#[has_many]`, or `#[has_one]`. Relation fields use
+`Deferred<_>` in the field type itself when they should be lazy.
 
 A deferred embed value omits all of the embed's columns from the default
 projection. Loading is the same as for a primitive: call the per-field
@@ -275,7 +275,7 @@ coalesce, and they combine with relation `.include()`s:
 let doc = Document::filter_by_id(id)
     .include(Document::fields().body())
     .include(Document::fields().summary())
-    .include(Document::fields().author())   // BelongsTo
+    .include(Document::fields().author())   // relation
     .get(&mut db)
     .await?;
 ```

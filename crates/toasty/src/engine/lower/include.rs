@@ -43,6 +43,7 @@ use toasty_core::{
 };
 
 use crate::engine::lower::LowerStatement;
+use crate::schema::lazy_slot;
 
 /// A flattened include: the projection (with variant roots folded in) plus
 /// the optional per-relation filter carried from the user's `.filter(...)`.
@@ -150,7 +151,7 @@ impl LowerStatement<'_, '_> {
             if !is_insert && !matches.self_included() {
                 return;
             }
-            *returning = stmt::Expr::record([loaded_form(field, mapping)]);
+            *returning = lazy_slot::loaded_expr(loaded_form(field, mapping));
 
             // For an embed, the loaded form is the embed's `default_returning`, which
             // has its own deferred sub-fields pre-masked. Recurse so those get loaded
@@ -284,16 +285,21 @@ impl LowerStatement<'_, '_> {
         nested: &[FlatInclude],
         top_filter: Option<stmt::Expr>,
     ) {
-        returning[field_index] =
-            self.build_relation_subquery_inner(field_index, nested, top_filter);
+        let value = self.build_relation_subquery_inner(field_index, nested, top_filter);
+        returning[field_index] = if self.model_unwrap().fields[field_index].deferred {
+            lazy_slot::loaded_expr(value)
+        } else {
+            value
+        };
     }
 
     /// Build a subquery that loads the related model(s) for a
     /// `BelongsTo`/`HasOne`/`HasMany` field, run the canonical lowering
     /// pipeline on it, and return it stitched onto the parent statement
-    /// as an `Expr::Arg`.  Used both by `.include(...)` (which splices
-    /// the result into a record slot) and by `.select(rel_field)` (which
-    /// uses the result as the entire projection expression).
+    /// as an `Expr::Arg`. Used both by `.include(...)` (which wraps the
+    /// result as a loaded lazy slot before splicing it into a record slot)
+    /// and by `.select(rel_field)` (which uses the raw result as the entire
+    /// projection expression).
     pub(super) fn build_relation_subquery(
         &mut self,
         field_index: usize,
@@ -318,13 +324,36 @@ impl LowerStatement<'_, '_> {
     ) -> stmt::Expr {
         let field = &self.model_unwrap().fields[field_index];
 
+        // A multi-step (`via`) relation reaches its target through a path of
+        // existing relations. Build the child query as a single JOIN through
+        // the via chain so the engine can issue one query (per include) and
+        // group the children with the parent in `NestedMerge`. This relies on
+        // the database executing the join, so it is SQL-only — a key-value
+        // backend would need a cascade of per-step queries instead.
+        let via = match &field.ty {
+            app::FieldTy::HasMany(rel) => rel.kind.via(),
+            app::FieldTy::HasOne(rel) => rel.kind.via(),
+            _ => None,
+        };
+        if let Some(via) = via {
+            if !self.capability().sql {
+                todo!(
+                    "`.include()` / `.select()` of a multi-step `via` relation is only \
+                     supported on SQL backends; query the relation directly instead"
+                );
+            }
+            let nested_projections: Vec<stmt::Projection> =
+                nested.iter().map(|fi| fi.projection.clone()).collect();
+            return self.build_via_include_subquery(field_index, via, &nested_projections);
+        }
+
         let (mut stmt, target_model_id) = match &field.ty {
             app::FieldTy::HasMany(rel) => (
                 stmt::Query::new_select(
                     rel.target,
                     stmt::Expr::eq(
                         stmt::Expr::ref_parent_model(),
-                        stmt::Expr::ref_self_field(rel.pair),
+                        stmt::Expr::ref_self_field(direct_pair(&rel.kind)),
                     ),
                 ),
                 rel.target,
@@ -359,7 +388,7 @@ impl LowerStatement<'_, '_> {
                     rel.target,
                     stmt::Expr::eq(
                         stmt::Expr::ref_parent_model(),
-                        stmt::Expr::ref_self_field(rel.pair),
+                        stmt::Expr::ref_self_field(direct_pair(&rel.kind)),
                     ),
                 );
                 query.single = true;
@@ -392,27 +421,7 @@ impl LowerStatement<'_, '_> {
         // Run the canonical pipeline (pre-lower simplify, lowering walk,
         // post-lower simplify) on the synthesized subquery, stitching it onto
         // the parent as an `Expr::Arg`.
-        let mut sub_expr = self.lower_sub_stmt(stmt::Statement::Query(stmt));
-
-        // For nullable single relations (HasOne<Option<T>>, BelongsTo<Option<T>>),
-        // wrap the sub-expression with a Let + Match to encode the result
-        // using variant-encoded values that distinguish loaded-None from
-        // unloaded.
-        if field.nullable() && !field.ty.is_has_many() {
-            sub_expr = stmt::Expr::Let(stmt::ExprLet {
-                bindings: vec![sub_expr],
-                body: Box::new(stmt::Expr::match_expr(
-                    stmt::Expr::arg(0),
-                    vec![stmt::MatchArm {
-                        pattern: stmt::Value::Null,
-                        expr: stmt::Expr::from(0i64),
-                    }],
-                    stmt::Expr::arg(0),
-                )),
-            });
-        }
-
-        sub_expr
+        self.lower_sub_stmt(stmt::Statement::Query(stmt))
     }
 }
 
@@ -421,6 +430,14 @@ impl FieldIncludes {
     fn self_included(&self) -> bool {
         self.include_self || !self.sub_paths.is_empty()
     }
+}
+
+/// The paired `BelongsTo` field of a direct has-relation. `.include()` of a
+/// `via` relation is rejected earlier in `build_relation_subquery`, so any
+/// relation reaching the direct-relation path has a pair.
+fn direct_pair(kind: &app::HasKind) -> app::FieldId {
+    kind.pair_id()
+        .expect("`via` relation reached the direct-relation include path")
 }
 
 /// Find the include entries that target field index `i` and split them by

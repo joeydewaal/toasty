@@ -39,6 +39,7 @@ impl Expand<'_> {
         let validate_create_impls = self.expand_validate_create_impls();
         let storage_compat_checks = self.expand_storage_compat_checks();
         let auto_compat_checks = self.expand_auto_compat_checks();
+        let version_compat_checks = self.expand_version_compat_checks();
 
         wrap_in_const(quote! {
             #model_impls
@@ -51,6 +52,7 @@ impl Expand<'_> {
             #validate_create_impls
             #storage_compat_checks
             #auto_compat_checks
+            #version_compat_checks
         })
     }
 }
@@ -392,15 +394,24 @@ impl Expand<'_> {
         quote! {
             impl #toasty::newtype::NewtypeOf for #model_ident {
                 type Inner = #inner_ty;
+
+                fn into_inner(self) -> #inner_ty {
+                    self.0
+                }
+
+                fn from_inner(inner: #inner_ty) -> Self {
+                    Self(inner)
+                }
             }
         }
     }
 
     /// Generates a field accessor method for a `BelongsTo` or `HasOne`
-    /// relation using `Relation::OneField`.
+    /// relation using the target's `Relation::OneField`.
     fn expand_one_relation_field_method(
         &self,
         field_ident: &syn::Ident,
+        field_trait: TokenStream,
         ty: &syn::Type,
         field_offset: &TokenStream,
     ) -> TokenStream {
@@ -410,8 +421,8 @@ impl Expand<'_> {
         let span = field_ident.span();
 
         quote_spanned! { span=>
-            #vis fn #field_ident(&self) -> <#ty as #toasty::Relation>::OneField<__Origin> {
-                <#ty as #toasty::Relation>::OneField::from_path(
+            #vis fn #field_ident(&self) -> <<#ty as #field_trait>::Target as #toasty::Relation>::OneField<__Origin> {
+                <<#ty as #field_trait>::Target as #toasty::Relation>::OneField::from_path(
                     self.path().chain(
                         #toasty::Path::<#model_ident, _>::from_field_index(#field_offset)
                     )
@@ -453,6 +464,14 @@ fn wrap_in_const(code: TokenStream) -> TokenStream {
     quote! {
         const _: () = {
             use toasty as _toasty;
+            // Import the setter-bound names unqualified so the `impl Trait`
+            // parameter types on create/update setters render as
+            // `impl IntoExpr<FieldExprTarget<..>>` in compiler errors rather
+            // than the much longer `_toasty::codegen_support::..` paths. Not
+            // every model uses all three (a model with only relation setters
+            // never names `Assign` here), so silence the unused-import lint.
+            #[allow(unused_imports)]
+            use _toasty::codegen_support::{Assign, FieldExprTarget, IntoExpr};
             #code
         };
     }

@@ -150,11 +150,14 @@ impl LowerStatement<'_, '_> {
         }
 
         // Initialize version fields to 1 if not already set by the user.
+        // For embedded newtypes (e.g. `Version(u64)`), wrap in one Record per
+        // embed layer so the value round-trips through the embed's `Load` impl.
         for field in &model.fields {
             if field.is_versionable() {
                 let mut field_expr = expr.entry_mut(field.id.index);
                 if field_expr.is_default() || field_expr.is_value_null() {
-                    field_expr.insert(stmt::Value::U64(1).into());
+                    let target = self.auto_target(field.id);
+                    field_expr.insert(target.wrap(stmt::Value::U64(1)).into());
                 }
             }
         }
@@ -227,7 +230,8 @@ impl LowerStatement<'_, '_> {
                 expr_arg: &stmt::ExprArg,
                 projection: &stmt::Projection,
             ) -> Option<stmt::Expr> {
-                todo!("self={self:#?}; expr_arg={expr_arg:#?}; projection={projection:#?}");
+                let _ = (expr_arg, projection);
+                None
             }
 
             fn resolve_ref(

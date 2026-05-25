@@ -3,13 +3,13 @@ use crate::stmt::{IntoExpr, IntoInsert, List, Path};
 
 use toasty_core::schema::Name;
 use toasty_core::schema::app::{FieldId, FieldTy, ForeignKey};
+use toasty_core::stmt;
 
 /// Describes how a model participates in associations.
 ///
 /// This trait is implemented by `#[derive(Model)]` and provides the associated
-/// types that the generated `HasMany`, `HasOne`, and `BelongsTo` wrappers use
-/// to construct query builders, create builders, and field accessors for
-/// the relation target.
+/// types that generated relation code uses to construct query builders, create
+/// builders, and field accessors for the relation target.
 ///
 /// Users do not implement this trait manually.
 pub trait Relation: Load<Output = Self> {
@@ -61,37 +61,96 @@ pub trait Relation: Load<Output = Self> {
     fn nullable() -> bool {
         false
     }
+}
 
-    /// Build the [`FieldTy`] for a `BelongsTo` relation wrapper, given the
-    /// foreign key resolved from the field's `#[belongs_to(...)]` attribute.
-    ///
-    /// Only [`BelongsTo`](super::BelongsTo) overrides this; the default
-    /// panics so that misuse (e.g. applying `#[belongs_to]` to a field whose
-    /// type is not a `BelongsTo<T>`) fails loudly.
-    fn belongs_to_field_ty(_foreign_key: ForeignKey) -> FieldTy {
-        unimplemented!("not a BelongsTo relation wrapper")
+/// A Rust field type that represents a `#[has_many]` relation.
+///
+/// This is implemented by [`Deferred<Vec<T>>`](super::Deferred) for lazy
+/// relations and by `Vec<T>` for eager relations. The target model/query-builder
+/// metadata stays on [`Relation`]; this trait only describes how the field
+/// itself contributes relation schema metadata.
+pub trait HasManyField: Load<Output = Self> {
+    /// The relation target type carried by this field.
+    type Target: Relation;
+
+    /// Returns `true` if this relation field is nullable.
+    fn nullable() -> bool {
+        <Self::Target as Relation>::nullable()
     }
 
-    /// Build the [`FieldTy`] for a `HasMany` relation wrapper, given the
+    /// Whether the field stores its value in a deferred load slot.
+    const DEFERRED: bool;
+
+    /// Reloads this relation field from a returned value.
+    fn reload(target: &mut Self, value: stmt::Value) -> crate::Result<()>;
+
+    /// Build the [`FieldTy`] for a `HasMany` relation field, given the
     /// singular name derived from the field identifier and an optional
     /// paired `BelongsTo` field on the target model resolved from
     /// `#[has_many(pair = <field>)]`. When `None`, the linker selects the
     /// pair by searching the target for a unique `BelongsTo` back to the
     /// source.
     ///
-    /// Only [`HasMany`](super::HasMany) overrides this.
-    fn has_many_field_ty(_singular: Name, _pair: Option<FieldId>) -> FieldTy {
-        unimplemented!("not a HasMany relation wrapper")
+    /// `via` carries the fully resolved [`stmt::Path`] of a
+    /// `#[has_many(via = a.b)]` multi-step relation, rooted at the declaring
+    /// model. A `via` relation has no pair.
+    fn has_many_field_ty(singular: Name, pair: Option<FieldId>, via: Option<stmt::Path>)
+    -> FieldTy;
+}
+
+/// A Rust field type that represents a `#[has_one]` relation.
+///
+/// This is implemented by [`Deferred<T>`](super::Deferred) for lazy relations
+/// and by `T` for eager relations. `T` may be `Option<Model>` for nullable
+/// `has_one` fields.
+pub trait HasOneField: Load<Output = Self> {
+    /// The relation target type carried by this field.
+    type Target: Relation;
+
+    /// Returns `true` if this relation field is nullable.
+    fn nullable() -> bool {
+        <Self::Target as Relation>::nullable()
     }
 
-    /// Build the [`FieldTy`] for a `HasOne` relation wrapper, given an
+    /// Whether the field stores its value in a deferred load slot.
+    const DEFERRED: bool;
+
+    /// Reloads this relation field from a returned value.
+    fn reload(target: &mut Self, value: stmt::Value) -> crate::Result<()>;
+
+    /// Build the [`FieldTy`] for a `HasOne` relation field, given an
     /// optional paired `BelongsTo` field on the target model resolved
     /// from `#[has_one(pair = <field>)]`. When `None`, the linker selects
     /// the pair by searching the target for a unique `BelongsTo` back to
     /// the source.
     ///
-    /// Only [`HasOne`](super::HasOne) overrides this.
-    fn has_one_field_ty(_pair: Option<FieldId>) -> FieldTy {
-        unimplemented!("not a HasOne relation wrapper")
+    /// `via` carries the fully resolved [`stmt::Path`] of a
+    /// `#[has_one(via = a.b)]` multi-step relation, rooted at the declaring
+    /// model. A `via` relation has no pair.
+    fn has_one_field_ty(pair: Option<FieldId>, via: Option<stmt::Path>) -> FieldTy;
+}
+
+/// A Rust field type that represents a `#[belongs_to]` relation.
+///
+/// This is implemented by [`Deferred<T>`](super::Deferred) for lazy relations
+/// and by `T` for eager relations. `T` may be `Option<Model>` for nullable
+/// `belongs_to` fields.
+pub trait BelongsToField: Load<Output = Self> {
+    /// The relation target type carried by this field.
+    type Target: Relation;
+
+    /// Returns `true` if this relation field is nullable.
+    fn nullable() -> bool {
+        <Self::Target as Relation>::nullable()
     }
+
+    /// Whether the field stores its value in a deferred load slot.
+    const DEFERRED: bool;
+
+    /// Reloads this relation field from a returned value.
+    fn reload(target: &mut Self, value: stmt::Value) -> crate::Result<()>;
+
+    /// Build the [`FieldTy`] for a `BelongsTo` relation field, given the
+    /// foreign key resolved from the field's `#[belongs_to(...)]` attribute.
+    fn belongs_to_field_ty(foreign_key: ForeignKey) -> FieldTy;
 }
