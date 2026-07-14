@@ -767,8 +767,12 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                         panic!()
                     };
 
-                    let arg =
-                        self.new_sub_statement(source_id, target_id, Box::new((*e.query).into()));
+                    // Post-lower simplify: the detached sub-statement is never
+                    // seen by the parent statement's simplify pass.
+                    let mut stmt: stmt::Statement = (*e.query).into();
+                    self.state.engine.simplify_stmt(&mut stmt);
+
+                    let arg = self.new_sub_statement(source_id, target_id, Box::new(stmt));
 
                     *expr = stmt::ExprInList {
                         expr: e.expr,
