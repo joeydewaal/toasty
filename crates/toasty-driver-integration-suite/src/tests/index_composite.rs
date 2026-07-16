@@ -1,6 +1,22 @@
 use crate::prelude::*;
 use toasty_core::driver::Operation;
 
+#[driver_test]
+pub async fn unique_on_key_is_noop(t: &mut Test) {
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        #[unique]
+        id: String,
+    }
+
+    let db = t.setup_db(models!(User)).await;
+    let table = &db.schema().db.tables[0];
+
+    assert_eq!(table.indices.len(), 1);
+    assert!(table.indices[0].primary_key);
+}
+
 /// Basic composite index: model-level `#[index(field_a, field_b)]` creates a two-column
 /// index on SQL and a GSI (hash + range key) on DynamoDB.
 #[driver_test]

@@ -795,17 +795,30 @@ fn resolve_enum_index_field(
 
 fn collect_field_indices(fields: &[Field], indices: &mut Vec<Index>) {
     for (index, field) in fields.iter().enumerate() {
-        if field.attrs.is_indexed() {
-            indices.push(Index {
-                fields: vec![IndexField {
-                    field: index,
-                    scope: IndexScope::Partition,
-                }],
-                unique: field.attrs.unique,
-                primary_key: false,
-                name: None,
-            });
+        if !field.attrs.is_indexed() {
+            continue;
         }
+
+        let is_covered = indices.iter().any(|existing| {
+            existing.fields.len() == 1
+                && existing.fields[0].field == index
+                && matches!(existing.fields[0].scope, IndexScope::Partition)
+                && (!field.attrs.unique || existing.unique)
+        });
+
+        if is_covered {
+            continue;
+        }
+
+        indices.push(Index {
+            fields: vec![IndexField {
+                field: index,
+                scope: IndexScope::Partition,
+            }],
+            unique: field.attrs.unique,
+            primary_key: false,
+            name: None,
+        });
     }
 }
 
