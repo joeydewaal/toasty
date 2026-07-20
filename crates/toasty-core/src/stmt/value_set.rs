@@ -144,6 +144,8 @@ pub(super) fn value_eq(a: &Value, b: &Value) -> bool {
         (Time(a), Time(b)) => a == b,
         #[cfg(feature = "jiff")]
         (DateTime(a), DateTime(b)) => a == b,
+        #[cfg(feature = "jiff")]
+        (Span(a), Span(b)) => a.fieldwise() == b.fieldwise(),
         _ => false,
     }
 }
@@ -221,6 +223,8 @@ pub(super) fn hash_value<H: Hasher>(v: &Value, state: &mut H) {
         Value::Time(x) => x.hash(state),
         #[cfg(feature = "jiff")]
         Value::DateTime(x) => x.hash(state),
+        #[cfg(feature = "jiff")]
+        Value::Span(x) => x.fieldwise().hash(state),
     }
 }
 

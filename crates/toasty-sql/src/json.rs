@@ -105,7 +105,11 @@ impl Serialize for Encode<'_> {
                     .expect("decimal value has a document text form"),
             ),
             #[cfg(feature = "jiff")]
-            v @ (Value::Timestamp(_) | Value::Date(_) | Value::Time(_) | Value::DateTime(_)) => {
+            v @ (Value::Timestamp(_)
+            | Value::Date(_)
+            | Value::Time(_)
+            | Value::DateTime(_)
+            | Value::Span(_)) => {
                 let text = v
                     .document_storage_text()
                     .expect("temporal value has a document text form");
@@ -286,6 +290,8 @@ impl<'de> Visitor<'de> for ValueVisitor<'_> {
             stmt::Type::Time => Ok(Value::Time(v.parse().map_err(E::custom)?)),
             #[cfg(feature = "jiff")]
             stmt::Type::DateTime => Ok(Value::DateTime(v.parse().map_err(E::custom)?)),
+            #[cfg(feature = "jiff")]
+            stmt::Type::Span => Ok(Value::Span(v.parse().map_err(E::custom)?)),
             other => Err(E::custom(format!(
                 "unexpected JSON string for type {other:?}"
             ))),

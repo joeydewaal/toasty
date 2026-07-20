@@ -23,6 +23,7 @@ pub(crate) fn to_postgres_type(ty: &db::Type) -> &'static Type {
         db::Type::Date => &Type::DATE,
         db::Type::Time(_) => &Type::TIME,
         db::Type::DateTime(_) => &Type::TIMESTAMP,
+        db::Type::Interval => &Type::INTERVAL,
         // Enum types are handled separately via the cached OID map;
         // fall back to TEXT if we reach here (shouldn't happen in practice).
         db::Type::Enum(_) => &Type::TEXT,

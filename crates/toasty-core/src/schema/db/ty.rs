@@ -106,6 +106,9 @@ pub enum Type {
     /// A representation of a civil datetime in the Gregorian calendar with fractional seconds precision (0-9 digits).
     DateTime(u8),
 
+    /// A PostgreSQL interval stored as months, days, and microseconds.
+    Interval,
+
     /// A database enum type. See [`TypeEnum`].
     Enum(TypeEnum),
 
@@ -210,6 +213,8 @@ impl Type {
                 stmt::Type::Time => Ok(db.default_time_type.clone()),
                 #[cfg(feature = "jiff")]
                 stmt::Type::DateTime => Ok(db.default_datetime_type.clone()),
+                #[cfg(feature = "jiff")]
+                stmt::Type::Span => Ok(db.default_span_type.clone()),
                 // An embedded model column is stored as a single document
                 // (`jsonb` on PG, `JSON` elsewhere) — never a native array.
                 // `Type::list` collapses a list-of-documents back to one

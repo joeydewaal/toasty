@@ -62,3 +62,4 @@ impl_jiff_field!(jiff::Zoned, Zoned, "jiff::Zoned");
 impl_jiff_field!(jiff::civil::Date, Date, "jiff::civil::Date");
 impl_jiff_field!(jiff::civil::Time, Time, "jiff::civil::Time");
 impl_jiff_field!(jiff::civil::DateTime, DateTime, "jiff::civil::DateTime");
+impl_jiff_field!(jiff::Span, Span, "jiff::Span");

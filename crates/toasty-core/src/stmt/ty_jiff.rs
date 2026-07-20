@@ -59,6 +59,14 @@ impl Type {
                         .map_err(|_| crate::Error::type_conversion(Value::String(v), "DateTime"))?,
                 )
             }
+            (Value::String(value), Type::Span) => {
+                let v = value.clone();
+                Value::Span(
+                    value
+                        .parse()
+                        .map_err(|_| crate::Error::type_conversion(Value::String(v), "Span"))?,
+                )
+            }
 
             // Identity
             (value @ Value::Timestamp(_), Type::Timestamp) => value.clone(),
@@ -66,6 +74,7 @@ impl Type {
             (value @ Value::Date(_), Type::Date) => value.clone(),
             (value @ Value::Time(_), Type::Time) => value.clone(),
             (value @ Value::DateTime(_), Type::DateTime) => value.clone(),
+            (value @ Value::Span(_), Type::Span) => value.clone(),
 
             // jiff -> String
             //
@@ -78,6 +87,7 @@ impl Type {
             (Value::Date(value), Type::String) => Value::String(value.to_string()),
             (Value::Time(value), Type::String) => Value::String(format!("{value:.9}")),
             (Value::DateTime(value), Type::String) => Value::String(format!("{value:.9}")),
+            (Value::Span(value), Type::String) => Value::String(value.to_string()),
 
             // UTC <-> Zoned
             (Value::Timestamp(value), Type::Zoned) => Value::Zoned(value.to_zoned(TimeZone::UTC)),

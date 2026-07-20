@@ -30,6 +30,7 @@ the entry lands here.
 - Foreign key constraints ([#366])
 - Server-side check constraints ([#644])
 - Database-side column defaults ([#642])
+- PostgreSQL `INTERVAL` and portable `jiff::Span` fields ([design](design/postgres-interval.md))
 - Composite unique constraints ([#639])
 - Partial / conditional unique constraints ([#640])
 - PostgreSQL dynamic index types — GIN, GiST, BRIN, HASH ([#673])

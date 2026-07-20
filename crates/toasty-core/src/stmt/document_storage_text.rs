@@ -27,9 +27,11 @@ impl Value {
     pub fn document_storage_text(&self) -> Option<DocumentStorageText<'_>> {
         match self {
             #[cfg(feature = "jiff")]
-            Value::Timestamp(_) | Value::Date(_) | Value::Time(_) | Value::DateTime(_) => {
-                Some(DocumentStorageText(self))
-            }
+            Value::Timestamp(_)
+            | Value::Date(_)
+            | Value::Time(_)
+            | Value::DateTime(_)
+            | Value::Span(_) => Some(DocumentStorageText(self)),
             #[cfg(feature = "rust_decimal")]
             Value::Decimal(_) => Some(DocumentStorageText(self)),
             #[cfg(feature = "bigdecimal")]
@@ -65,6 +67,7 @@ impl fmt::Display for DocumentStorageText<'_> {
             Value::Time(v) => write!(f, "{:.6}", trunc_time_us(*v)),
             #[cfg(feature = "jiff")]
             Value::DateTime(v) => write!(f, "{:.6}", trunc_datetime_us(*v)),
+            Value::Span(v) => write!(f, "{v}"),
             #[cfg(feature = "rust_decimal")]
             Value::Decimal(v) => write!(f, "{v}"),
             #[cfg(feature = "bigdecimal")]

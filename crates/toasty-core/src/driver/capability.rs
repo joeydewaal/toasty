@@ -405,6 +405,9 @@ pub struct StorageTypes {
     /// The default storage type for a DateTime (civil datetime).
     pub default_datetime_type: db::Type,
 
+    /// The default storage type for a Span.
+    pub default_span_type: db::Type,
+
     /// Maximum value for unsigned integers. When `Some`, unsigned integers
     /// are limited to this value. When `None`, full u64 range is supported.
     pub max_unsigned_integer: Option<u64>,
@@ -560,6 +563,8 @@ impl Capability {
             stmt::Type::Time => self.storage_types.default_time_type.bridge_type(ty),
             #[cfg(feature = "jiff")]
             stmt::Type::DateTime => self.storage_types.default_datetime_type.bridge_type(ty),
+            #[cfg(feature = "jiff")]
+            stmt::Type::Span => self.storage_types.default_span_type.bridge_type(ty),
             _ => ty.clone(),
         }
     }
@@ -908,6 +913,7 @@ impl StorageTypes {
         default_date_type: db::Type::Text,
         default_time_type: db::Type::Text,
         default_datetime_type: db::Type::Text,
+        default_span_type: db::Type::Text,
 
         // SQLite INTEGER is a signed 64-bit integer, so unsigned integers
         // are limited to i64::MAX to prevent overflow
@@ -939,6 +945,7 @@ impl StorageTypes {
         default_date_type: db::Type::Date,
         default_time_type: db::Type::Time(6),
         default_datetime_type: db::Type::DateTime(6),
+        default_span_type: db::Type::Interval,
 
         // PostgreSQL BIGINT is signed 64-bit, so unsigned integers are limited
         // to i64::MAX. While NUMERIC could theoretically support larger values,
@@ -977,6 +984,7 @@ impl StorageTypes {
         default_date_type: db::Type::Date,
         default_time_type: db::Type::Time(6),
         default_datetime_type: db::Type::DateTime(6),
+        default_span_type: db::Type::VarChar(191),
 
         // MySQL supports full u64 range via BIGINT UNSIGNED
         max_unsigned_integer: None,
@@ -1003,6 +1011,7 @@ impl StorageTypes {
         default_date_type: db::Type::Text,
         default_time_type: db::Type::Text,
         default_datetime_type: db::Type::Text,
+        default_span_type: db::Type::Text,
 
         // DynamoDB supports full u64 range (numbers stored as strings)
         max_unsigned_integer: None,

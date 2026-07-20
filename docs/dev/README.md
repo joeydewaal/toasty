@@ -31,6 +31,7 @@ Guide-level design documents for specific features. Use
 - [Document and Collection Fields](./design/document-fields.md)
 - [Enums and Embedded Structs](./design/enums-and-embedded-structs.md)
 - [Optimistic Concurrency with `#[version]`](./design/field-version.md)
+- [PostgreSQL `INTERVAL` and Portable Span Fields](./design/postgres-interval.md)
 - [`query!` Macro](./design/query-macro.md)
 - [Static Assertions for `create!` Required Fields](./design/static-assertions-create-macro.md)
 - [Upsert](./design/upsert.md)

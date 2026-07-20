@@ -26,3 +26,4 @@ impl_jiff_conversions!(jiff::Zoned, Zoned, "Zoned");
 impl_jiff_conversions!(jiff::civil::Date, Date, "Date");
 impl_jiff_conversions!(jiff::civil::Time, Time, "Time");
 impl_jiff_conversions!(jiff::civil::DateTime, DateTime, "DateTime");
+impl_jiff_conversions!(jiff::Span, Span, "Span");

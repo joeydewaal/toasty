@@ -102,6 +102,10 @@ impl ToSql for &db::Type {
                 Flavor::Mysql => fmt!(f, "DATETIME(" precision ")"),
                 Flavor::Sqlite => todo!("SQLite does not support DateTime"),
             },
+            db::Type::Interval => match f.serializer.flavor {
+                Flavor::Postgresql => fmt!(f, "INTERVAL"),
+                Flavor::Mysql | Flavor::Sqlite => todo!("INTERVAL is PostgreSQL-only"),
+            },
             db::Type::Enum(type_enum) => match f.serializer.flavor {
                 // PostgreSQL: reference the named enum type created with CREATE TYPE.
                 Flavor::Postgresql => {

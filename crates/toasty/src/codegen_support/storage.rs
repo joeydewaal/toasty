@@ -196,4 +196,6 @@ mod jiff_impls {
     impl CompatibleWith<tag::VarChar> for jiff::civil::Time {}
     impl CompatibleWith<tag::Text> for jiff::civil::DateTime {}
     impl CompatibleWith<tag::VarChar> for jiff::civil::DateTime {}
+    impl CompatibleWith<tag::Text> for jiff::Span {}
+    impl CompatibleWith<tag::VarChar> for jiff::Span {}
 }

@@ -32,7 +32,7 @@ use std::cmp::Ordering;
 /// let v = Value::from(true);
 /// assert_eq!(v, true);
 /// ```
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone)]
 pub enum Value {
     /// Boolean value
     Bool(bool),
@@ -128,6 +128,54 @@ pub enum Value {
     /// See [`jiff::civil::DateTime`].
     #[cfg(feature = "jiff")]
     DateTime(jiff::civil::DateTime),
+
+    /// A calendar or clock span.
+    /// See [`jiff::Span`].
+    #[cfg(feature = "jiff")]
+    Span(jiff::Span),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::I8(a), Self::I8(b)) => a == b,
+            (Self::I16(a), Self::I16(b)) => a == b,
+            (Self::I32(a), Self::I32(b)) => a == b,
+            (Self::I64(a), Self::I64(b)) => a == b,
+            (Self::U8(a), Self::U8(b)) => a == b,
+            (Self::U16(a), Self::U16(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::U64(a), Self::U64(b)) => a == b,
+            (Self::F32(a), Self::F32(b)) => a == b,
+            (Self::F64(a), Self::F64(b)) => a == b,
+            (Self::SparseRecord(a), Self::SparseRecord(b)) => a == b,
+            (Self::Null, Self::Null) => true,
+            (Self::Record(a), Self::Record(b)) => a == b,
+            (Self::Object(a), Self::Object(b)) => a == b,
+            (Self::List(a), Self::List(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a == b,
+            (Self::Bytes(a), Self::Bytes(b)) => a == b,
+            (Self::Uuid(a), Self::Uuid(b)) => a == b,
+            #[cfg(feature = "rust_decimal")]
+            (Self::Decimal(a), Self::Decimal(b)) => a == b,
+            #[cfg(feature = "bigdecimal")]
+            (Self::BigDecimal(a), Self::BigDecimal(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::Timestamp(a), Self::Timestamp(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::Zoned(a), Self::Zoned(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::Date(a), Self::Date(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::Time(a), Self::Time(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::DateTime(a), Self::DateTime(b)) => a == b,
+            #[cfg(feature = "jiff")]
+            (Self::Span(a), Self::Span(b)) => a.fieldwise() == b.fieldwise(),
+            _ => false,
+        }
+    }
 }
 
 impl Value {
@@ -396,6 +444,8 @@ impl Value {
             Value::Time(_) => *ty == Type::Time,
             #[cfg(feature = "jiff")]
             Value::DateTime(_) => *ty == Type::DateTime,
+            #[cfg(feature = "jiff")]
+            Value::Span(_) => *ty == Type::Span,
         }
     }
 
@@ -471,6 +521,8 @@ impl Value {
             Value::Time(_) => Type::Time,
             #[cfg(feature = "jiff")]
             Value::DateTime(_) => Type::DateTime,
+            #[cfg(feature = "jiff")]
+            Value::Span(_) => Type::Span,
         }
     }
 
@@ -553,6 +605,8 @@ impl Value {
             Value::Time(_) => storage.default_time_type.clone(),
             #[cfg(feature = "jiff")]
             Value::DateTime(_) => storage.default_datetime_type.clone(),
+            #[cfg(feature = "jiff")]
+            Value::Span(_) => storage.default_span_type.clone(),
             // A list stores as the array type of its element, but only when the
             // elements are uniform at the *app-type* level. Reuse the full
             // inference path to enforce that: comparing storage types alone is
@@ -679,11 +733,29 @@ impl PartialOrd for Value {
             (Value::Time(a), Value::Time(b)) => a.partial_cmp(b),
             #[cfg(feature = "jiff")]
             (Value::DateTime(a), Value::DateTime(b)) => a.partial_cmp(b),
+            #[cfg(feature = "jiff")]
+            (Value::Span(a), Value::Span(b)) => span_fields(a).partial_cmp(&span_fields(b)),
 
             // Types without natural ordering or different types.
             _ => None,
         }
     }
+}
+
+#[cfg(feature = "jiff")]
+fn span_fields(span: &jiff::Span) -> (i16, i32, i32, i32, i32, i64, i64, i64, i64, i64) {
+    (
+        span.get_years(),
+        span.get_months(),
+        span.get_weeks(),
+        span.get_days(),
+        span.get_hours(),
+        span.get_minutes(),
+        span.get_seconds(),
+        span.get_milliseconds(),
+        span.get_microseconds(),
+        span.get_nanoseconds(),
+    )
 }
 
 impl From<bool> for Value {

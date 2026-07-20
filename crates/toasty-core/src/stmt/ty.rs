@@ -172,6 +172,11 @@ pub enum Type {
     #[cfg(feature = "jiff")]
     DateTime,
 
+    /// A calendar or clock span.
+    /// See [`jiff::Span`].
+    #[cfg(feature = "jiff")]
+    Span,
+
     /// The null type. Represents the type of a null value and is cast-able to
     /// any type. Also used as the element type of an empty list whose item type
     /// is not yet known.

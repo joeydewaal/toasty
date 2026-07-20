@@ -48,6 +48,38 @@ impl<'a> postgres_types::FromSql<'a> for RawBytes<'a> {
     }
 }
 
+/// Decodes PostgreSQL's binary `INTERVAL` representation into a Jiff span.
+///
+/// PostgreSQL sends three independent fields: microseconds, days, and months.
+/// Jiff rejects mixed signs and values outside its span limits.
+#[cfg(feature = "jiff")]
+struct PgSpan(jiff::Span);
+
+#[cfg(feature = "jiff")]
+impl<'a> postgres_types::FromSql<'a> for PgSpan {
+    fn from_sql(
+        _ty: &Type,
+        raw: &'a [u8],
+    ) -> std::result::Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        if raw.len() != 16 {
+            return Err(format!("invalid PostgreSQL INTERVAL length: {}", raw.len()).into());
+        }
+
+        let microseconds = i64::from_be_bytes(raw[0..8].try_into().unwrap());
+        let days = i32::from_be_bytes(raw[8..12].try_into().unwrap());
+        let months = i32::from_be_bytes(raw[12..16].try_into().unwrap());
+        let span = jiff::Span::new()
+            .try_months(months)?
+            .try_days(days)?
+            .try_microseconds(microseconds)?;
+        Ok(Self(span))
+    }
+
+    fn accepts(ty: &Type) -> bool {
+        *ty == Type::INTERVAL
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Value(CoreValue);
 
@@ -145,6 +177,15 @@ impl Value {
             #[cfg(not(feature = "jiff"))]
             {
                 panic!("TIME requires jiff feature to be enabled")
+            }
+        } else if column.type_() == &Type::INTERVAL {
+            #[cfg(feature = "jiff")]
+            {
+                stmt::Value::Span(get_or_return_null!(PgSpan).0)
+            }
+            #[cfg(not(feature = "jiff"))]
+            {
+                panic!("INTERVAL requires jiff feature to be enabled")
             }
         } else if column.type_() == &Type::FLOAT4 {
             float4_to_value(get_or_return_null!(f32), expected_ty)
@@ -270,6 +311,15 @@ impl Value {
             #[cfg(not(feature = "jiff"))]
             {
                 panic!("TIME requires jiff feature to be enabled")
+            }
+        } else if column.type_() == &Type::INTERVAL {
+            #[cfg(feature = "jiff")]
+            {
+                stmt::Value::Span(get_or_return_null!(PgSpan).0)
+            }
+            #[cfg(not(feature = "jiff"))]
+            {
+                panic!("INTERVAL requires jiff feature to be enabled")
             }
         } else if column.type_() == &Type::FLOAT4 {
             stmt::Value::F32(get_or_return_null!(f32))
@@ -507,6 +557,7 @@ impl ToSql for Value {
                 | Type::TIMESTAMPTZ
                 | Type::DATE
                 | Type::TIME
+                | Type::INTERVAL
                 | Type::JSONB
                 | Type::JSON
         ) || matches!(ty.kind(), Kind::Enum(_) | Kind::Array(_))
@@ -577,6 +628,12 @@ fn value_to_sql(
         (stmt::Value::Time(value), _) => value.to_sql(ty, out),
         #[cfg(feature = "jiff")]
         (stmt::Value::DateTime(value), _) => value.to_sql(ty, out),
+        #[cfg(feature = "jiff")]
+        (stmt::Value::Span(_), &Type::INTERVAL) => {
+            Err(Box::new(toasty_core::Error::unsupported_feature(
+                "encoding jiff::Span as PostgreSQL INTERVAL is unsupported; use text storage",
+            )))
+        }
         // `#[document]` columns: serialize the structural value (a
         // `Value::List` of `Value::Object`s) to JSON and bind it. The engine
         // has already converted positional records to named objects, so this

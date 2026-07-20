@@ -97,6 +97,7 @@ impl_into_expr_for_copy! {
     Date(jiff::civil::Date);
     Time(jiff::civil::Time);
     DateTime(jiff::civil::DateTime);
+    Span(jiff::Span);
 }
 
 // Pointer-sized integers convert through their fixed-size equivalents
