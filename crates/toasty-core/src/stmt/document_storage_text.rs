@@ -7,15 +7,17 @@ impl Value {
     /// `None` if the value has no document text form.
     ///
     /// Values that are stored as JSON strings inside a `#[document]` column
-    /// take this form: jiff temporal values (truncated to microseconds — the
-    /// precision the SQL temporal types hold — and formatted with *fixed*
-    /// six-digit subsecond precision) and decimals (their `Display` form).
+    /// take this form: jiff temporal values use ISO 8601 text and decimals use
+    /// their `Display` form. Instant and civil values are truncated to
+    /// microseconds and use fixed six-digit subsecond precision. ISO 8601 has
+    /// no separate subsecond unit designators, so Span formatting folds those
+    /// fields into fractional seconds; the duration is preserved, but an
+    /// unbalanced span may not remain fieldwise-equal after parsing.
+    ///
     /// Fixed temporal precision matters on backends that compare document
-    /// leaves as plain text (SQLite has no native temporal types, so
-    /// `json_extract` comparisons are text comparisons): uniform-precision
-    /// ISO 8601 strings sort lexicographically in chronological order, while
-    /// trimmed subseconds do not (`...T00:00:00Z` sorts *after*
-    /// `...T00:00:00.000001Z`).
+    /// leaves as plain text: uniform-precision ISO 8601 strings sort
+    /// lexicographically in chronological order, while trimmed subseconds do
+    /// not (`...T00:00:00Z` sorts *after* `...T00:00:00.000001Z`).
     ///
     /// Both the JSON document codec (`toasty-sql`) and the engine's document
     /// lowering (which rewrites comparison operands to text on those
@@ -67,6 +69,7 @@ impl fmt::Display for DocumentStorageText<'_> {
             Value::Time(v) => write!(f, "{:.6}", trunc_time_us(*v)),
             #[cfg(feature = "jiff")]
             Value::DateTime(v) => write!(f, "{:.6}", trunc_datetime_us(*v)),
+            #[cfg(feature = "jiff")]
             Value::Span(v) => write!(f, "{v}"),
             #[cfg(feature = "rust_decimal")]
             Value::Decimal(v) => write!(f, "{v}"),

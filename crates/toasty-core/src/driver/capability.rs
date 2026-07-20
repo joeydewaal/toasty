@@ -129,6 +129,9 @@ pub struct Capability {
     /// Whether the database has native support for DateTime types.
     pub native_datetime: bool,
 
+    /// Whether the database has a native interval type.
+    pub native_interval: bool,
+
     /// Whether the database supports native enum types.
     ///
     /// - PostgreSQL: `true` — `CREATE TYPE ... AS ENUM`
@@ -601,6 +604,7 @@ impl Capability {
         native_date: false,
         native_time: false,
         native_datetime: false,
+        native_interval: false,
 
         // SQLite does not have native decimal types
         native_decimal: false,
@@ -690,6 +694,7 @@ impl Capability {
         native_date: true,
         native_time: true,
         native_datetime: true,
+        native_interval: true,
 
         // PostgreSQL has native NUMERIC type with arbitrary precision
         native_decimal: true,
@@ -747,6 +752,7 @@ impl Capability {
         native_date: true,
         native_time: true,
         native_datetime: true,
+        native_interval: false,
 
         // MySQL has DECIMAL type but requires fixed precision/scale upfront
         native_decimal: true,
@@ -826,6 +832,7 @@ impl Capability {
         native_date: false,
         native_time: false,
         native_datetime: false,
+        native_interval: false,
 
         // DynamoDB does not have native decimal types
         native_decimal: false,
@@ -984,7 +991,7 @@ impl StorageTypes {
         default_date_type: db::Type::Date,
         default_time_type: db::Type::Time(6),
         default_datetime_type: db::Type::DateTime(6),
-        default_span_type: db::Type::VarChar(191),
+        default_span_type: db::Type::Text,
 
         // MySQL supports full u64 range via BIGINT UNSIGNED
         max_unsigned_integer: None,

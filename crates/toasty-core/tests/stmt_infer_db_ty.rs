@@ -93,6 +93,29 @@ fn mixed_string_and_date_sharing_text_is_rejected() {
     assert!(v.infer_db_ty(st).is_err());
 }
 
+#[cfg(feature = "jiff")]
+#[test]
+fn span_resolves_through_storage_defaults() {
+    let value = Value::Span(jiff::Span::new());
+
+    assert_eq!(
+        value.infer_db_ty(&StorageTypes::POSTGRESQL).unwrap(),
+        db::Type::Interval
+    );
+    assert_eq!(
+        value.infer_db_ty(&StorageTypes::MYSQL).unwrap(),
+        db::Type::Text
+    );
+    assert_eq!(
+        value.infer_db_ty(&StorageTypes::SQLITE).unwrap(),
+        db::Type::Text
+    );
+    assert_eq!(
+        value.infer_db_ty(&StorageTypes::DYNAMODB).unwrap(),
+        db::Type::Text
+    );
+}
+
 #[test]
 fn empty_list_is_rejected() {
     let st = &StorageTypes::SQLITE;

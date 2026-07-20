@@ -582,3 +582,183 @@ pub async fn filter_by_timestamp(test: &mut Test) -> Result<(), BoxError> {
 
     Ok(())
 }
+
+#[driver_test]
+pub async fn ty_span_text_round_trip(test: &mut Test) -> Result<(), BoxError> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: uuid::Uuid,
+
+        #[column(type = text)]
+        val: jiff::Span,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let span = jiff::Span::new()
+        .years(2)
+        .months(3)
+        .weeks(4)
+        .days(5)
+        .hours(6)
+        .minutes(7)
+        .seconds(8)
+        .milliseconds(9)
+        .microseconds(10)
+        .nanoseconds(11);
+
+    let item = toasty::create!(Item { val: span }).exec(&mut db).await?;
+    let loaded = Item::get_by_id(&mut db, &item.id).await?;
+
+    assert_eq!(loaded.val.fieldwise(), span.fieldwise());
+    Ok(())
+}
+
+#[driver_test(requires(not(native_interval)))]
+pub async fn ty_span_text_path_operations(test: &mut Test) -> Result<(), BoxError> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: uuid::Uuid,
+
+        name: String,
+
+        #[column(type = text)]
+        val: jiff::Span,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let one_hour = jiff::Span::new().hours(1);
+    let two_hours = jiff::Span::new().hours(2);
+    let three_hours = jiff::Span::new().hours(3);
+
+    toasty::create!(Item::[
+        { name: "one", val: one_hour },
+        { name: "two", val: two_hours },
+        { name: "three", val: three_hours },
+    ])
+    .exec(&mut db)
+    .await?;
+
+    let items: Vec<_> = Item::filter(Item::fields().val().ne(two_hours))
+        .order_by(Item::fields().name().asc())
+        .exec(&mut db)
+        .await?;
+    assert_struct!(items, [{ name: "one", .. }, { name: "three", .. }]);
+
+    let items: Vec<_> = Item::filter(Item::fields().val().in_list([one_hour, three_hours]))
+        .order_by(Item::fields().name().asc())
+        .exec(&mut db)
+        .await?;
+    assert_struct!(items, [{ name: "one", .. }, { name: "three", .. }]);
+
+    let items: Vec<_> = Item::filter(Item::fields().val().gt(one_hour))
+        .order_by(Item::fields().name().asc())
+        .exec(&mut db)
+        .await?;
+    assert_struct!(items, [{ name: "three", .. }, { name: "two", .. }]);
+
+    let items: Vec<_> = Item::all()
+        .order_by(Item::fields().val().desc())
+        .exec(&mut db)
+        .await?;
+    assert_struct!(
+        items,
+        [
+            { name: "three", .. },
+            { name: "two", .. },
+            { name: "one", .. },
+        ]
+    );
+
+    Ok(())
+}
+
+#[driver_test(requires(native_interval))]
+pub async fn ty_span_native_decode(test: &mut Test) -> Result<(), BoxError> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: u64,
+        val: jiff::Span,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let table = db
+        .schema()
+        .db
+        .tables
+        .iter()
+        .find(|table| table.name.ends_with("items"))
+        .unwrap()
+        .name
+        .clone();
+
+    toasty::sql::statement(format!(
+        "INSERT INTO \"{table}\" (val) VALUES (INTERVAL '1 year 3 months 2 days 00:00:03.000004')"
+    ))
+    .exec(&mut db)
+    .await?;
+
+    let item = Item::all().get(&mut db).await?;
+    let expected = jiff::Span::new().months(15).days(2).microseconds(3_000_004);
+    assert_eq!(item.val.fieldwise(), expected.fieldwise());
+    Ok(())
+}
+
+#[driver_test(requires(native_interval))]
+pub async fn ty_span_native_decode_rejects_mixed_signs(test: &mut Test) -> Result<(), BoxError> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: u64,
+        val: jiff::Span,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let table = db
+        .schema()
+        .db
+        .tables
+        .iter()
+        .find(|table| table.name.ends_with("items"))
+        .unwrap()
+        .name
+        .clone();
+
+    toasty::sql::statement(format!(
+        "INSERT INTO \"{table}\" (val) VALUES (INTERVAL '-1 month 2 days')"
+    ))
+    .exec(&mut db)
+    .await?;
+
+    assert_err!(Item::all().get(&mut db).await);
+    Ok(())
+}
+
+#[driver_test(requires(native_interval))]
+pub async fn ty_span_native_encode_is_rejected(test: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: u64,
+        val: jiff::Span,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let err = assert_err!(
+        toasty::create!(Item {
+            val: jiff::Span::new(),
+        })
+        .exec(&mut db)
+        .await
+    );
+
+    assert!(err.is_unsupported_feature(), "unexpected error: {err}");
+    Ok(())
+}

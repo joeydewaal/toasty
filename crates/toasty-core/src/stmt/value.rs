@@ -172,6 +172,7 @@ impl PartialEq for Value {
             #[cfg(feature = "jiff")]
             (Self::DateTime(a), Self::DateTime(b)) => a == b,
             #[cfg(feature = "jiff")]
+            // Elapsed-time equality can require a relative datetime, so compare span fields.
             (Self::Span(a), Self::Span(b)) => a.fieldwise() == b.fieldwise(),
             _ => false,
         }
@@ -733,29 +734,11 @@ impl PartialOrd for Value {
             (Value::Time(a), Value::Time(b)) => a.partial_cmp(b),
             #[cfg(feature = "jiff")]
             (Value::DateTime(a), Value::DateTime(b)) => a.partial_cmp(b),
-            #[cfg(feature = "jiff")]
-            (Value::Span(a), Value::Span(b)) => span_fields(a).partial_cmp(&span_fields(b)),
 
             // Types without natural ordering or different types.
             _ => None,
         }
     }
-}
-
-#[cfg(feature = "jiff")]
-fn span_fields(span: &jiff::Span) -> (i16, i32, i32, i32, i32, i64, i64, i64, i64, i64) {
-    (
-        span.get_years(),
-        span.get_months(),
-        span.get_weeks(),
-        span.get_days(),
-        span.get_hours(),
-        span.get_minutes(),
-        span.get_seconds(),
-        span.get_milliseconds(),
-        span.get_microseconds(),
-        span.get_nanoseconds(),
-    )
 }
 
 impl From<bool> for Value {

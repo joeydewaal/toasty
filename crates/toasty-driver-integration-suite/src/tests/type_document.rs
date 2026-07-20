@@ -588,6 +588,41 @@ pub async fn struct_embed_filter(t: &mut Test) -> Result<(), BoxError> {
     Ok(())
 }
 
+/// A span inside a document compares using the ISO 8601 text stored in JSON,
+/// including on PostgreSQL where a plain span column defaults to `INTERVAL`.
+#[driver_test(requires(document_collections))]
+pub async fn struct_embed_span_equality_filter(t: &mut Test) -> Result<(), BoxError> {
+    #[derive(Clone, Debug, toasty::Embed)]
+    struct Schedule {
+        wait: jiff::Span,
+    }
+
+    #[derive(Debug, toasty::Model)]
+    struct Job {
+        #[key]
+        #[auto]
+        id: uuid::Uuid,
+        #[document]
+        schedule: Schedule,
+    }
+
+    let mut db = t.setup_db(models!(Job)).await;
+    let wait = jiff::Span::new().days(2).hours(6);
+
+    toasty::create!(Job {
+        schedule: Schedule { wait },
+    })
+    .exec(&mut db)
+    .await?;
+
+    let jobs = Job::filter(Job::fields().schedule().wait().eq(wait))
+        .exec(&mut db)
+        .await?;
+    let expected_wait = wait.fieldwise();
+    assert_struct!(jobs, [{ schedule: { wait: == expected_wait } }]);
+    Ok(())
+}
+
 /// A `#[document]` string-leaf filter matches the *same* case sensitivity as a
 /// plain column on the same backend (case-insensitive under MySQL's default
 /// collation, case-sensitive on SQLite/PostgreSQL). Rather than hardcode a

@@ -10,7 +10,8 @@ impl Type {
     ///
     /// Supports conversions between:
     /// - `String` and any jiff type (parsing ISO 8601 format)
-    /// - Any jiff type and `String` (formatting with fixed 9-digit nanosecond precision)
+    /// - Instant and civil types to `String` with fixed 9-digit nanosecond precision
+    /// - `Span` to `String` using ISO 8601 duration formatting
     /// - `Timestamp` and `Zoned` (via UTC timezone)
     /// - `Timestamp`/`Zoned` and `DateTime` (via UTC timezone)
     ///
@@ -87,6 +88,10 @@ impl Type {
             (Value::Date(value), Type::String) => Value::String(value.to_string()),
             (Value::Time(value), Type::String) => Value::String(format!("{value:.9}")),
             (Value::DateTime(value), Type::String) => Value::String(format!("{value:.9}")),
+            // ISO 8601 has no separate millisecond, microsecond, or nanosecond
+            // designators, so Jiff folds those fields into fractional seconds.
+            // The duration is preserved, but an unbalanced span may not remain
+            // fieldwise-equal after parsing the stored text.
             (Value::Span(value), Type::String) => Value::String(value.to_string()),
 
             // UTC <-> Zoned

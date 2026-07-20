@@ -51,7 +51,7 @@ impl<'a> postgres_types::FromSql<'a> for RawBytes<'a> {
 /// Decodes PostgreSQL's binary `INTERVAL` representation into a Jiff span.
 ///
 /// PostgreSQL sends three independent fields: microseconds, days, and months.
-/// Jiff rejects mixed signs and values outside its span limits.
+/// Jiff has one sign for the whole span, so mixed signs cannot be preserved.
 #[cfg(feature = "jiff")]
 struct PgSpan(jiff::Span);
 
@@ -68,6 +68,16 @@ impl<'a> postgres_types::FromSql<'a> for PgSpan {
         let microseconds = i64::from_be_bytes(raw[0..8].try_into().unwrap());
         let days = i32::from_be_bytes(raw[8..12].try_into().unwrap());
         let months = i32::from_be_bytes(raw[12..16].try_into().unwrap());
+
+        let has_positive = months > 0 || days > 0 || microseconds > 0;
+        let has_negative = months < 0 || days < 0 || microseconds < 0;
+        if has_positive && has_negative {
+            return Err(
+                "PostgreSQL INTERVAL components with mixed signs cannot be represented as jiff::Span"
+                    .into(),
+            );
+        }
+
         let span = jiff::Span::new()
             .try_months(months)?
             .try_days(days)?
@@ -78,6 +88,13 @@ impl<'a> postgres_types::FromSql<'a> for PgSpan {
     fn accepts(ty: &Type) -> bool {
         *ty == Type::INTERVAL
     }
+}
+
+#[cfg(feature = "jiff")]
+fn try_get_pg_span(index: usize, row: &Row) -> toasty_core::Result<Option<jiff::Span>> {
+    row.try_get::<usize, Option<PgSpan>>(index)
+        .map(|span| span.map(|span| span.0))
+        .map_err(toasty_core::Error::driver_operation_failed)
 }
 
 #[derive(Debug)]
@@ -101,14 +118,14 @@ impl Value {
         row: &Row,
         column: &Column,
         expected_ty: &stmt::Type,
-    ) -> Self {
+    ) -> toasty_core::Result<Self> {
         // Gets the value from the row as Option<T> and return stmt::Value::Null if the Option is
         // None.
         macro_rules! get_or_return_null {
             ($ty:ty) => {{
                 match row.get::<usize, Option<$ty>>(index) {
                     Some(inner) => inner,
-                    None => return Self(stmt::Value::Null),
+                    None => return Ok(Self(stmt::Value::Null)),
                 }
             }};
         }
@@ -181,7 +198,10 @@ impl Value {
         } else if column.type_() == &Type::INTERVAL {
             #[cfg(feature = "jiff")]
             {
-                stmt::Value::Span(get_or_return_null!(PgSpan).0)
+                match try_get_pg_span(index, row)? {
+                    Some(span) => stmt::Value::Span(span),
+                    None => return Ok(Self(stmt::Value::Null)),
+                }
             }
             #[cfg(not(feature = "jiff"))]
             {
@@ -206,7 +226,7 @@ impl Value {
             // rejects custom enum types.
             match row.get::<usize, Option<EnumString>>(index) {
                 Some(EnumString(v)) => stmt::Value::String(v),
-                None => return Self(stmt::Value::Null),
+                None => return Ok(Self(stmt::Value::Null)),
             }
         } else if column.type_() == &Type::JSONB || column.type_() == &Type::JSON {
             // `#[document]` columns. Decode the raw JSON wire bytes
@@ -214,7 +234,7 @@ impl Value {
             // engine raises it to the embed's positional record.
             let raw = match row.get::<usize, Option<RawBytes<'_>>>(index) {
                 Some(RawBytes(raw)) => raw,
-                None => return Self(stmt::Value::Null),
+                None => return Ok(Self(stmt::Value::Null)),
             };
             // `jsonb` wire format: a 1-byte version header, then UTF-8 JSON
             // text. `json` is plain UTF-8 text.
@@ -238,7 +258,7 @@ impl Value {
             let items = read_array_items(index, row, column, elem_ty);
             match items {
                 Some(items) => stmt::Value::List(items),
-                None => return Self(stmt::Value::Null),
+                None => return Ok(Self(stmt::Value::Null)),
             }
         } else {
             todo!(
@@ -247,17 +267,21 @@ impl Value {
             );
         };
 
-        Value(core_value)
+        Ok(Value(core_value))
     }
 
     /// Converts a PostgreSQL value within a row using PostgreSQL column
     /// metadata as the Toasty value type.
-    pub(crate) fn from_sql_infer(index: usize, row: &Row, column: &Column) -> Self {
+    pub(crate) fn from_sql_infer(
+        index: usize,
+        row: &Row,
+        column: &Column,
+    ) -> toasty_core::Result<Self> {
         macro_rules! get_or_return_null {
             ($ty:ty) => {{
                 match row.get::<usize, Option<$ty>>(index) {
                     Some(inner) => inner,
-                    None => return Self(stmt::Value::Null),
+                    None => return Ok(Self(stmt::Value::Null)),
                 }
             }};
         }
@@ -315,7 +339,10 @@ impl Value {
         } else if column.type_() == &Type::INTERVAL {
             #[cfg(feature = "jiff")]
             {
-                stmt::Value::Span(get_or_return_null!(PgSpan).0)
+                match try_get_pg_span(index, row)? {
+                    Some(span) => stmt::Value::Span(span),
+                    None => return Ok(Self(stmt::Value::Null)),
+                }
             }
             #[cfg(not(feature = "jiff"))]
             {
@@ -337,7 +364,7 @@ impl Value {
         } else if matches!(column.type_().kind(), Kind::Enum(_)) {
             match row.get::<usize, Option<EnumString>>(index) {
                 Some(EnumString(v)) => stmt::Value::String(v),
-                None => return Self(stmt::Value::Null),
+                None => return Ok(Self(stmt::Value::Null)),
             }
         } else {
             todo!(
@@ -346,7 +373,7 @@ impl Value {
             );
         };
 
-        Value(core_value)
+        Ok(Value(core_value))
     }
 }
 

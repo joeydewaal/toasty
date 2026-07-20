@@ -85,15 +85,11 @@ impl Serialize for Encode<'_> {
             }
             // Decimals and jiff temporal scalars store the shared document
             // text form ([`Value::document_storage_text`]): decimals as their
-            // `Display` form, temporals as ISO 8601 / RFC 3339 text truncated
-            // to microseconds (the precision the SQL temporal types hold) and
-            // printed with fixed six-digit subsecond precision so
-            // text-comparing backends (SQLite) order document leaves
-            // chronologically. The engine's document lowering builds
-            // comparison operands through the same method, so the stored form
-            // and a bound operand cannot drift apart. `Zoned` is rejected at
-            // schema-build (its RFC 9557 annotation has no SQL cast), so it
-            // never reaches a document column.
+            // `Display` form and temporal values as ISO 8601 / RFC 3339 text.
+            // The engine's document lowering builds comparison operands through
+            // the same method, so the stored form and a bound operand cannot
+            // drift apart. `Zoned` is rejected at schema build because its RFC
+            // 9557 annotation has no SQL cast.
             #[cfg(feature = "rust_decimal")]
             v @ Value::Decimal(_) => s.collect_str(
                 &v.document_storage_text()

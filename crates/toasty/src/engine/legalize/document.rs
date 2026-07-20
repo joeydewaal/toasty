@@ -108,6 +108,11 @@ impl LegalizeDocumentPaths<'_> {
             stmt::Type::Time => !self.capability.native_time,
             #[cfg(feature = "jiff")]
             stmt::Type::DateTime => !self.capability.native_datetime,
+            // Document spans are always ISO 8601 strings. PostgreSQL can read
+            // native INTERVAL columns as Span, but cannot bind a Span as an
+            // INTERVAL comparison operand.
+            #[cfg(feature = "jiff")]
+            stmt::Type::Span => true,
             #[cfg(feature = "rust_decimal")]
             stmt::Type::Decimal => !self.capability.native_decimal,
             #[cfg(feature = "bigdecimal")]

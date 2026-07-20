@@ -430,12 +430,12 @@ impl Connection {
                 SqlReturn::Count => unreachable!(),
                 SqlReturn::Infer => {
                     for (i, column) in row.columns().iter().enumerate() {
-                        results.push(Value::from_sql_infer(i, &row, column).into_inner());
+                        results.push(Value::from_sql_infer(i, &row, column)?.into_inner());
                     }
                 }
                 SqlReturn::Types(ret_tys) => {
                     for (i, column) in row.columns().iter().enumerate() {
-                        results.push(Value::from_sql(i, &row, column, &ret_tys[i]).into_inner());
+                        results.push(Value::from_sql(i, &row, column, &ret_tys[i])?.into_inner());
                     }
                 }
             }

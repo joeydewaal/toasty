@@ -113,6 +113,40 @@ fn datetime_to_string() {
     }
 }
 
+#[test]
+fn span_string_round_trip() {
+    let span = jiff::Span::new()
+        .years(1)
+        .months(2)
+        .days(3)
+        .hours(4)
+        .nanoseconds(5);
+    let value = Value::Span(span);
+    let text = Type::String.cast_jiff(&value).unwrap().unwrap();
+    let round_trip = Type::Span.cast_jiff(&text).unwrap().unwrap();
+
+    let Value::Span(round_trip) = round_trip else {
+        panic!("expected Span value");
+    };
+    assert_eq!(round_trip.fieldwise(), span.fieldwise());
+}
+
+#[test]
+fn span_text_balances_subsecond_fields() {
+    let span = jiff::Span::new().milliseconds(1_000);
+    let column_text = Type::String.cast_jiff(&Value::Span(span)).unwrap().unwrap();
+    let document_text = Value::Span(span)
+        .document_storage_text()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(column_text, Value::String("PT1S".to_string()));
+    assert_eq!(document_text, "PT1S");
+    let parsed: jiff::Span = document_text.parse().unwrap();
+    assert_eq!(parsed.fieldwise(), jiff::Span::new().seconds(1).fieldwise());
+    assert_ne!(parsed.fieldwise(), span.fieldwise());
+}
+
 // ===== UTC <-> Zoned conversions =====
 
 #[test]

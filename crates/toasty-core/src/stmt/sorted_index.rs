@@ -208,9 +208,6 @@ fn value_total_cmp(a: &Value, b: &Value) -> Ordering {
         (Value::DateTime(a), Value::DateTime(b)) => a.cmp(b),
 
         #[cfg(feature = "jiff")]
-        (Value::Span(a), Value::Span(b)) => span_fields(a).cmp(&span_fields(b)),
-
-        #[cfg(feature = "jiff")]
         (Value::Zoned(a), Value::Zoned(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
 
         // Cross-type: order by a fixed variant index.
@@ -257,20 +254,4 @@ fn variant_index(v: &Value) -> u8 {
         #[cfg(feature = "jiff")]
         Value::Span(_) => 26,
     }
-}
-
-#[cfg(feature = "jiff")]
-fn span_fields(span: &jiff::Span) -> (i16, i32, i32, i32, i32, i64, i64, i64, i64, i64) {
-    (
-        span.get_years(),
-        span.get_months(),
-        span.get_weeks(),
-        span.get_days(),
-        span.get_hours(),
-        span.get_minutes(),
-        span.get_seconds(),
-        span.get_milliseconds(),
-        span.get_microseconds(),
-        span.get_nanoseconds(),
-    )
 }
