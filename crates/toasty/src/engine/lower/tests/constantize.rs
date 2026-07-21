@@ -27,7 +27,7 @@ struct Account {
 /// the pair round-trips to the positional record — a schema-directed
 /// conversion, so the evaluation must have schema access.
 #[test]
-fn document_update_returning_constantizes() {
+fn document_update_returning_constantizes_only_new_values() {
     let schema = test_schema_with(&[Account::schema(), Profile::schema()]);
 
     let (column_id, doc_ty) = schema
@@ -59,7 +59,7 @@ fn document_update_returning_constantizes() {
         Expr::cast_from(Expr::Value(profile.clone()), doc_ty, &column.ty),
     );
 
-    let mut returning = Returning::Project(Expr::record_from_vec(vec![raising_expr]));
+    let mut returning = Returning::Project(Expr::record_from_vec(vec![raising_expr.clone()]));
 
     constantize_update_returning(
         stmt::ExprContext::new_with_target(&schema, table),
@@ -72,4 +72,17 @@ fn document_update_returning_constantizes() {
         returning,
         Returning::Project(Expr::Value(Value::record_from_vec(vec![profile])))
     );
+
+    let expected = Returning::Old(Box::new(Returning::Project(Expr::record_from_vec(vec![
+        raising_expr,
+    ]))));
+    let mut returning = expected.clone();
+
+    constantize_update_returning(
+        stmt::ExprContext::new_with_target(&schema, table),
+        &mut returning,
+        &assignments,
+    );
+
+    assert_eq!(returning, expected);
 }

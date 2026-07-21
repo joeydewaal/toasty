@@ -36,6 +36,9 @@ pub(crate) struct UpdateByKey {
     /// returns only an affected-row count.
     pub(crate) columns: IndexSet<stmt::ExprReference>,
 
+    /// Whether to return pre-update values.
+    pub(crate) returning_old: bool,
+
     /// The return type.
     pub(crate) ty: stmt::Type,
 }
@@ -51,26 +54,30 @@ impl UpdateByKey {
         let output = var_table.register_var(node.ty().clone());
         node.var.set(Some(output));
 
-        let returning = if self.ty.is_unit() {
+        let returning = if self.columns.is_empty() {
             None
         } else {
-            Some(
-                self.columns
-                    .iter()
-                    .map(|expr_reference| {
-                        let stmt::ExprReference::Column(expr_column) = expr_reference else {
-                            todo!()
-                        };
-                        debug_assert_eq!(expr_column.nesting, 0);
-                        debug_assert_eq!(expr_column.table, 0);
+            let columns = self
+                .columns
+                .iter()
+                .map(|expr_reference| {
+                    let stmt::ExprReference::Column(expr_column) = expr_reference else {
+                        todo!()
+                    };
+                    debug_assert_eq!(expr_column.nesting, 0);
+                    debug_assert_eq!(expr_column.table, 0);
 
-                        ColumnId {
-                            table: self.table,
-                            index: expr_column.column,
-                        }
-                    })
-                    .collect(),
-            )
+                    ColumnId {
+                        table: self.table,
+                        index: expr_column.column,
+                    }
+                })
+                .collect();
+            Some(if self.returning_old {
+                toasty_core::driver::operation::UpdateReturning::Old(columns)
+            } else {
+                toasty_core::driver::operation::UpdateReturning::New(columns)
+            })
         };
 
         exec::UpdateByKey {

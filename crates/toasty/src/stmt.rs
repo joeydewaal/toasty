@@ -62,6 +62,8 @@ pub use scope::IntoScope;
 
 mod update;
 pub use update::Update;
+#[doc(hidden)]
+pub use update::{UpdateCount, UpdateFirst, UpdateOne};
 
 mod upsert;
 pub use upsert::Upsert;

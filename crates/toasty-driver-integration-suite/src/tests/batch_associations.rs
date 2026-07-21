@@ -67,7 +67,7 @@ pub async fn batch_scoped_update_and_delete_same_relation(t: &mut Test) -> Resul
     let todo_keep = user.todos().create().title("keep").exec(&mut db).await?;
     let todo_drop = user.todos().create().title("drop").exec(&mut db).await?;
 
-    let ((), ()): ((), ()) = toasty::batch((
+    let (count, ()): (u64, ()) = toasty::batch((
         user.todos()
             .filter_by_id(todo_keep.id)
             .update()
@@ -76,6 +76,7 @@ pub async fn batch_scoped_update_and_delete_same_relation(t: &mut Test) -> Resul
     ))
     .exec(&mut db)
     .await?;
+    assert_eq!(count, 1);
 
     let remaining: Vec<Todo> = user.todos().exec(&mut db).await?;
     assert_eq!(remaining.len(), 1);
@@ -101,7 +102,7 @@ pub async fn batch_scoped_all_four_crud(t: &mut Test) -> Result<()> {
         .await?;
     let doomed = user.todos().create().title("doomed").exec(&mut db).await?;
 
-    let (queried, created, (), ()): (Vec<Todo>, Todo, (), ()) = toasty::batch((
+    let (queried, created, count, ()): (Vec<Todo>, Todo, u64, ()) = toasty::batch((
         user.todos(),
         user.todos().create().title("new"),
         user.todos()
@@ -116,6 +117,7 @@ pub async fn batch_scoped_all_four_crud(t: &mut Test) -> Result<()> {
     // Query ran before the update/delete in this batch, so sees original state
     assert_eq!(queried.len(), 2);
     assert_eq!(created.title, "new");
+    assert_eq!(count, 1);
 
     // Verify final state
     let final_todos: Vec<Todo> = user.todos().exec(&mut db).await?;
@@ -243,12 +245,13 @@ pub async fn batch_scoped_delete_with_root_update(t: &mut Test) -> Result<()> {
     let user = User::create().name("Alice").exec(&mut db).await?;
     let todo = user.todos().create().title("done").exec(&mut db).await?;
 
-    let ((), ()): ((), ()) = toasty::batch((
+    let ((), count): ((), u64) = toasty::batch((
         user.todos().filter_by_id(todo.id).delete(),
         User::filter_by_name("Alice").update().name("Alice2"),
     ))
     .exec(&mut db)
     .await?;
+    assert_eq!(count, 1);
 
     // Todo deleted
     let remaining: Vec<Todo> = user.todos().exec(&mut db).await?;

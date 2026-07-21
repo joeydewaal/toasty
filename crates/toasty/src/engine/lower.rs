@@ -1034,7 +1034,60 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
-        if let stmt::Returning::Model { include } = i {
+        if let stmt::Returning::First {
+            returning,
+            selector,
+            key,
+        }
+        | stmt::Returning::One {
+            returning,
+            selector,
+            key,
+        } = i
+        {
+            let model = self.model_unwrap();
+            *key = model
+                .primary_key
+                .fields
+                .iter()
+                .map(|field| field.index)
+                .collect();
+
+            if let Some(selector) = selector {
+                let stmt::Expr::Stmt(expr_stmt) = selector else {
+                    panic!("ordered update selector must be a query; selector={selector:#?}")
+                };
+                let query = expr_stmt.stmt.as_query_mut().unwrap();
+                *query.returning_mut_unwrap() = stmt::Returning::Project(stmt::Expr::record(
+                    model
+                        .primary_key
+                        .fields
+                        .iter()
+                        .copied()
+                        .map(|field| stmt::Expr::ref_field(0, field)),
+                ));
+                query.single = false;
+                query.limit = Some(stmt::Limit::Offset(stmt::LimitOffset {
+                    limit: stmt::Expr::Static(stmt::Value::I64(1)),
+                    offset: None,
+                }));
+
+                LowerStatement {
+                    state: self.state,
+                    expr_cx: self.expr_cx,
+                    scope_id: self.scope_id,
+                    cx: LoweringContext::Statement,
+                    collect_dependencies: self.collect_dependencies,
+                }
+                .visit_expr_mut(selector);
+            }
+
+            self.lower_returning().visit_returning_mut(returning);
+            return;
+        }
+
+        let load_implicit_relations = matches!(i, stmt::Returning::Model { .. });
+        if let stmt::Returning::Model { include } | stmt::Returning::ModelUnloaded { include } = i {
             // Start from the schema's pre-computed default returning — every
             // Deferred fields, top-level or nested, are already `Null`.
             // `process_top_level_includes` then splices loaded forms in for
@@ -1044,7 +1097,13 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             let mut include_paths = std::mem::take(include);
             let is_insert = self.cx.is_insert();
 
-            self.prepare_model_returning_for_context(&mut returning, &mut include_paths, is_insert);
+            if load_implicit_relations {
+                self.prepare_model_returning_for_context(
+                    &mut returning,
+                    &mut include_paths,
+                    is_insert,
+                );
+            }
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
             *i = stmt::Returning::Project(returning);

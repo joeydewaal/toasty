@@ -84,6 +84,9 @@ struct Formatter<'a> {
     /// upsert assignment to distinguish them from `excluded` columns.
     assignment_table: Option<db::TableId>,
 
+    /// Whether PostgreSQL `RETURNING` references should read the old row.
+    returning_old: bool,
+
     /// Collects `Expr::Arg(n)` positions in the order they appear in the SQL.
     /// Used by MySQL (which uses positional `?` without indices) to reorder
     /// the params vec to match placeholder occurrence order. Borrowed so a
@@ -108,6 +111,7 @@ impl<'a> Formatter<'a> {
             alias: self.alias,
             in_insert: self.in_insert,
             assignment_table: self.assignment_table,
+            returning_old: self.returning_old,
             arg_positions: &mut *self.arg_positions,
         }
     }
@@ -148,6 +152,7 @@ impl<'a> Serializer<'a> {
                 alias: false,
                 in_insert: false,
                 assignment_table: None,
+                returning_old: false,
                 arg_positions: &mut arg_positions,
             };
 
@@ -175,6 +180,7 @@ impl<'a> Serializer<'a> {
                 alias: false,
                 in_insert: false,
                 assignment_table: None,
+                returning_old: false,
                 arg_positions: &mut arg_positions,
             };
 

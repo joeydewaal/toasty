@@ -22,14 +22,50 @@ pub enum Returning {
         include: Vec<Path>,
     },
 
+    /// Return the model without implicitly loading relation fields.
+    ModelUnloaded {
+        /// Explicit relation include paths. Usually empty for mutation results.
+        include: Vec<Path>,
+    },
+
+    /// Return at most the first row, using the query's ordering when present.
+    First {
+        /// The values to return.
+        returning: Box<Returning>,
+
+        /// Query selecting the first pre-update primary key.
+        selector: Option<Expr>,
+
+        /// Primary-key field positions in the returned model.
+        key: Vec<usize>,
+    },
+
+    /// Return one row and fail when the update matched no records.
+    One {
+        /// The values to return.
+        returning: Box<Returning>,
+
+        /// Query selecting the first pre-update primary key.
+        selector: Option<Expr>,
+
+        /// Primary-key field positions in the returned model.
+        key: Vec<usize>,
+    },
+
     /// Return whether the operation changed any rows.
     Changed,
+
+    /// Return the number of rows affected by a mutation.
+    Count,
 
     /// Return the result of evaluating an expression against the source rows.
     Project(Expr),
 
     /// Return a fixed expression, independent of the statement source.
     Expr(Expr),
+
+    /// Return values from before the mutation instead of after it.
+    Old(Box<Returning>),
 }
 
 impl Returning {
@@ -44,14 +80,23 @@ impl Returning {
 
     /// Returns `true` if this is the `Model` variant.
     pub fn is_model(&self) -> bool {
-        matches!(self, Self::Model { .. })
+        match self {
+            Self::Model { .. } | Self::ModelUnloaded { .. } => true,
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.is_model()
+            }
+            _ => false,
+        }
     }
 
     /// Returns the association include paths for a `Model` variant, or an
     /// empty slice for other variants.
     pub fn model_includes(&self) -> &[Path] {
         match self {
-            Self::Model { include } => include,
+            Self::Model { include } | Self::ModelUnloaded { include } => include,
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.model_includes()
+            }
             _ => &[],
         }
     }
@@ -64,7 +109,10 @@ impl Returning {
     #[track_caller]
     pub fn model_includes_mut_unwrap(&mut self) -> &mut Vec<Path> {
         match self {
-            Self::Model { include } => include,
+            Self::Model { include } | Self::ModelUnloaded { include } => include,
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.model_includes_mut_unwrap()
+            }
             _ => panic!("not a Model variant"),
         }
     }
@@ -74,9 +122,20 @@ impl Returning {
         matches!(self, Self::Changed)
     }
 
+    /// Returns `true` if this is the `Count` variant.
+    pub fn is_count(&self) -> bool {
+        matches!(self, Self::Count)
+    }
+
     /// Returns `true` if this is the `Project` variant.
     pub fn is_project(&self) -> bool {
-        matches!(self, Self::Project(_))
+        match self {
+            Self::Project(_) => true,
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.is_project()
+            }
+            _ => false,
+        }
     }
 
     /// Returns a reference to the inner expression if this is the `Project`
@@ -84,7 +143,53 @@ impl Returning {
     pub fn as_project(&self) -> Option<&Expr> {
         match self {
             Self::Project(expr) => Some(expr),
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.as_project()
+            }
             _ => None,
+        }
+    }
+
+    /// Returns `true` when this clause requests pre-mutation values.
+    pub fn is_old(&self) -> bool {
+        match self {
+            Self::Old(_) => true,
+            Self::First { returning, .. } | Self::One { returning, .. } => returning.is_old(),
+            _ => false,
+        }
+    }
+
+    /// Select pre-mutation values.
+    pub fn into_old(self) -> Self {
+        match self {
+            Self::Old(_) => self,
+            returning => Self::Old(Box::new(returning)),
+        }
+    }
+
+    /// Select post-mutation values.
+    pub fn into_new(self) -> Self {
+        match self {
+            Self::Old(returning) => *returning,
+            Self::First {
+                returning,
+                selector,
+                key,
+            } => Self::First {
+                returning: Box::new(returning.into_new()),
+                selector,
+                key,
+            },
+            Self::One {
+                returning,
+                selector,
+                key,
+            } => Self::One {
+                returning: Box::new(returning.into_new()),
+                selector,
+                key,
+            },
+            returning => returning,
         }
     }
 
@@ -104,6 +209,9 @@ impl Returning {
     pub fn as_project_mut(&mut self) -> Option<&mut Expr> {
         match self {
             Self::Project(expr) => Some(expr),
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.as_project_mut()
+            }
             _ => None,
         }
     }
@@ -115,21 +223,73 @@ impl Returning {
     /// Panics if this is not the `Project` variant.
     #[track_caller]
     pub fn as_project_mut_unwrap(&mut self) -> &mut Expr {
-        match self {
-            Self::Project(expr) => expr,
-            _ => panic!("expected stmt::Returning::Project; actual={self:#?}"),
+        if !self.is_project() {
+            panic!("expected stmt::Returning::Project; actual={self:#?}");
         }
+        self.as_project_mut().unwrap()
     }
 
     /// Replaces this returning clause with `Returning::Project` containing the
     /// given expression.
     pub fn set_project(&mut self, expr: impl Into<Expr>) {
-        *self = Returning::Project(expr.into());
+        match self {
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.set_project(expr)
+            }
+            returning => *returning = Returning::Project(expr.into()),
+        }
     }
 
     /// Returns `true` if this is the `Expr` variant.
     pub fn is_expr(&self) -> bool {
-        matches!(self, Self::Expr(..))
+        match self {
+            Self::Expr(_) => true,
+            Self::First { returning, .. } | Self::One { returning, .. } | Self::Old(returning) => {
+                returning.is_expr()
+            }
+            _ => false,
+        }
+    }
+
+    /// Attach a query that selects the first pre-update row.
+    pub fn set_selector(&mut self, selector: Option<Expr>) {
+        match self {
+            Self::First {
+                selector: target, ..
+            }
+            | Self::One {
+                selector: target, ..
+            } => *target = selector,
+            Self::Old(returning) => returning.set_selector(selector),
+            _ => {}
+        }
+    }
+
+    /// Remove result cardinality metadata, leaving the underlying projection.
+    pub fn take_rows(&mut self) -> ReturningRows {
+        let returning = self.take();
+        match returning {
+            Self::First {
+                returning,
+                selector,
+                key,
+            } => {
+                *self = *returning;
+                ReturningRows::First { selector, key }
+            }
+            Self::One {
+                returning,
+                selector,
+                key,
+            } => {
+                *self = *returning;
+                ReturningRows::One { selector, key }
+            }
+            returning => {
+                *self = returning;
+                ReturningRows::All
+            }
+        }
     }
 
     /// Takes this returning clause, replacing it with `Returning::Project(null)`,
@@ -137,6 +297,31 @@ impl Returning {
     pub fn take(&mut self) -> Returning {
         std::mem::replace(self, Returning::Project(stmt::Expr::null()))
     }
+}
+
+/// Cardinality shaping applied to rows returned from a mutation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReturningRows {
+    /// Return every row.
+    All,
+
+    /// Return at most the first row.
+    First {
+        /// Query selecting the first pre-update primary key.
+        selector: Option<Expr>,
+
+        /// Primary-key field positions in the returned model.
+        key: Vec<usize>,
+    },
+
+    /// Return one row and fail when none matched.
+    One {
+        /// Query selecting the first pre-update primary key.
+        selector: Option<Expr>,
+
+        /// Primary-key field positions in the returned model.
+        key: Vec<usize>,
+    },
 }
 
 impl Statement {

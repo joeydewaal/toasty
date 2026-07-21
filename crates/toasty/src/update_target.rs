@@ -14,6 +14,9 @@ pub trait UpdateTarget {
     /// The type parameter for the typed `Update<R>` statement.
     type Returning: Load;
 
+    /// The value produced by the generated update builder.
+    type Output;
+
     /// Build the update statement by combining this target's selection with the
     /// provided assignments.
     ///
@@ -27,7 +30,7 @@ pub trait UpdateTarget {
 
     /// Apply the result of an update operation.
     ///
-    /// For query-based updates, this discards the values.
+    /// For query-based updates, this loads the affected count.
     /// For instance updates, this reloads the model from the value.
-    fn apply_result(self, value: Value) -> Result<()>;
+    fn apply_result(self, value: Value) -> Result<Self::Output>;
 }

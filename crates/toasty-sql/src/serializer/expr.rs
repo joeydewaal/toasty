@@ -204,6 +204,11 @@ impl ToSql for &stmt::Expr {
                             .as_column_unwrap();
                     if matches!(f.serializer.flavor, Flavor::Postgresql)
                         && expr_column.nesting == 0
+                        && f.returning_old
+                    {
+                        fmt!(f, "old." Ident(&column.name))
+                    } else if matches!(f.serializer.flavor, Flavor::Postgresql)
+                        && expr_column.nesting == 0
                         && f.assignment_table == Some(column.id.table)
                     {
                         fmt!(f, f.serializer.table_name(column.id.table) "." Ident(&column.name))

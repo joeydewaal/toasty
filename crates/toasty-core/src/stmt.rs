@@ -235,7 +235,7 @@ mod query;
 pub use query::{Lock, Query};
 
 mod returning;
-pub use returning::Returning;
+pub use returning::{Returning, ReturningRows};
 
 mod select;
 pub use select::Select;

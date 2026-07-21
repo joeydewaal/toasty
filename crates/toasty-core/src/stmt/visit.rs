@@ -1422,14 +1422,30 @@ where
     V: Visit + ?Sized,
 {
     match node {
-        Returning::Model { include } => {
+        Returning::Model { include } | Returning::ModelUnloaded { include } => {
             for path in include {
                 v.visit_path(path);
             }
         }
-        Returning::Changed => {}
+        Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr(expr),
         Returning::Expr(expr) => v.visit_expr(expr),
+        Returning::First {
+            returning,
+            selector,
+            ..
+        }
+        | Returning::One {
+            returning,
+            selector,
+            ..
+        } => {
+            if let Some(selector) = selector {
+                v.visit_expr(selector);
+            }
+            v.visit_returning(returning);
+        }
+        Returning::Old(returning) => v.visit_returning(returning),
     }
 }
 

@@ -248,6 +248,71 @@ impl stmt::Visit for Verify<'_, '_> {
         // Is not an empty update
         assert!(!i.assignments.is_empty(), "stmt = {i:#?}");
 
+        let model = self
+            .schema
+            .app
+            .model(i.target.model_id_unwrap())
+            .as_root_unwrap();
+
+        if let stmt::UpdateTarget::Query(query) = &i.target
+            && query.order_by.is_some()
+            && i.returning
+                .as_ref()
+                .is_some_and(returning_rows_are_narrowed)
+            && i.returning
+                .as_ref()
+                .is_some_and(|returning| !returning.is_old())
+            && model.primary_key.fields.iter().any(|field| {
+                i.assignments
+                    .keys()
+                    .any(|projection| projection.as_slice().first() == Some(&field.index))
+            })
+        {
+            self.record(Error::unsupported_feature(
+                "ordered update returns cannot update primary-key fields",
+            ));
+        }
+
+        if let Some(returning) = i
+            .returning
+            .as_ref()
+            .filter(|returning| returning.is_model())
+        {
+            let supported = if returning.is_old() {
+                self.capability.update_returning_old
+            } else {
+                self.capability.update_returning_new
+            };
+
+            if !supported {
+                let version = if returning.is_old() { "old" } else { "new" };
+                self.record(Error::unsupported_feature(format!(
+                    "{} does not support returning {version} models from updates",
+                    self.capability.driver_name
+                )));
+            }
+
+            if !self.capability.update_returning_unique {
+                let assigns_unique = model
+                    .indices
+                    .iter()
+                    .filter(|index| index.unique && !index.primary_key)
+                    .flat_map(|index| &index.fields)
+                    .any(|index_field| {
+                        i.assignments.keys().any(|projection| {
+                            projection.as_slice().first() == Some(&index_field.field.index)
+                        })
+                    });
+
+                if assigns_unique {
+                    self.record(Error::unsupported_feature(format!(
+                        "{} cannot return models while updating a unique secondary-index field",
+                        self.capability.driver_name
+                    )));
+                }
+            }
+        }
+
         let mut verify_expr = VerifyExpr {
             schema: self.schema,
             model: i.target.model_id_unwrap(),
@@ -256,6 +321,14 @@ impl stmt::Visit for Verify<'_, '_> {
         };
 
         verify_expr.visit_stmt_update(i);
+    }
+}
+
+fn returning_rows_are_narrowed(returning: &stmt::Returning) -> bool {
+    match returning {
+        stmt::Returning::First { .. } | stmt::Returning::One { .. } => true,
+        stmt::Returning::Old(returning) => returning_rows_are_narrowed(returning),
+        _ => false,
     }
 }
 
@@ -566,15 +639,30 @@ fn rhs_is_concrete_list(expr: &stmt::Expr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::test_util::test_schema;
+    use crate as toasty;
+    use crate::{
+        engine::test_util::{test_schema, test_schema_with},
+        schema::Model,
+    };
     use toasty_core::driver::Capability;
-    use toasty_core::stmt::{Expr, ExprIsSuperset, ExprList, Value};
+    use toasty_core::stmt::{
+        Assignments, Condition, Expr, ExprIsSuperset, ExprList, Filter, Returning, Update,
+        UpdateTarget, Value,
+    };
 
     fn verify_with(capability: &'static Capability, stmt: Statement) -> Result<()> {
         let schema = test_schema();
+        verify_with_schema(&schema, capability, stmt)
+    }
+
+    fn verify_with_schema(
+        schema: &toasty_core::Schema,
+        capability: &'static Capability,
+        stmt: Statement,
+    ) -> Result<()> {
         let mut error = None;
         Verify {
-            schema: &schema,
+            schema,
             capability,
             error: &mut error,
         }
@@ -605,6 +693,23 @@ mod tests {
             lhs: Box::new(Expr::arg(0)),
             rhs: Box::new(rhs),
         })
+    }
+
+    fn update_returning(
+        model: toasty_core::schema::app::ModelId,
+        returning: Returning,
+    ) -> Statement {
+        let mut assignments = Assignments::default();
+        assignments.set(0usize, Value::I64(1));
+
+        Update {
+            target: UpdateTarget::Model(model),
+            assignments,
+            filter: Filter::ALL,
+            condition: Condition::default(),
+            returning: Some(returning),
+        }
+        .into()
     }
 
     #[test]
@@ -678,6 +783,85 @@ mod tests {
         let err = verify_expr_with(&Capability::DYNAMODB, &expr)
             .expect("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
+    }
+
+    #[test]
+    fn update_returning_new_rejected_on_mysql() {
+        let stmt = update_returning(
+            toasty_core::schema::app::ModelId(0),
+            Returning::Model { include: vec![] },
+        );
+        let err =
+            verify_with(&Capability::MYSQL, stmt).expect_err("expected unsupported_feature error");
+        assert!(err.is_unsupported_feature());
+    }
+
+    #[test]
+    fn update_returning_old_rejected_on_sqlite() {
+        let stmt = update_returning(
+            toasty_core::schema::app::ModelId(0),
+            Returning::Model { include: vec![] }.into_old(),
+        );
+        let err =
+            verify_with(&Capability::SQLITE, stmt).expect_err("expected unsupported_feature error");
+        assert!(err.is_unsupported_feature());
+    }
+
+    #[test]
+    fn update_returning_old_accepted_on_postgresql_and_dynamodb() {
+        #[derive(Debug, toasty::Model)]
+        struct User {
+            #[key]
+            id: i64,
+
+            value: i64,
+        }
+
+        let schema = test_schema_with(&[User::schema()]);
+        let returning = Returning::Model { include: vec![] }.into_old();
+        assert!(
+            verify_with_schema(
+                &schema,
+                &Capability::POSTGRESQL,
+                update_returning(User::id(), returning.clone())
+            )
+            .is_ok()
+        );
+        assert!(
+            verify_with_schema(
+                &schema,
+                &Capability::DYNAMODB,
+                update_returning(User::id(), returning)
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn update_returning_unique_assignment_rejected_on_dynamodb() {
+        #[derive(Debug, toasty::Model)]
+        struct User {
+            #[key]
+            id: uuid::Uuid,
+
+            #[unique]
+            email: String,
+        }
+
+        let schema = test_schema_with(&[User::schema()]);
+        let mut assignments = Assignments::default();
+        assignments.set(1usize, "new@example.com");
+        let stmt = Update {
+            target: UpdateTarget::Model(User::id()),
+            assignments,
+            filter: Filter::ALL,
+            condition: Condition::default(),
+            returning: Some(Returning::ModelUnloaded { include: vec![] }),
+        };
+
+        let error = verify_with_schema(&schema, &Capability::DYNAMODB, stmt.into())
+            .expect_err("expected unsupported_feature error");
+        assert!(error.is_unsupported_feature());
     }
 
     #[test]

@@ -6,6 +6,63 @@ use crate::{
 use std::{fmt, marker::PhantomData};
 use toasty_core::stmt;
 
+/// Return marker for the affected count of a generated query update.
+#[doc(hidden)]
+pub struct UpdateCount;
+
+impl Load for UpdateCount {
+    type Output = u64;
+
+    fn ty() -> stmt::Type {
+        stmt::Type::U64
+    }
+
+    fn load(value: stmt::Value) -> Result<Self::Output> {
+        match value {
+            stmt::Value::List(values) if values.is_empty() => Ok(0),
+            stmt::Value::List(mut values) if values.len() == 1 => values.pop().unwrap().try_into(),
+            value => value.try_into(),
+        }
+    }
+}
+
+/// Return marker for the first model returned by an update.
+#[doc(hidden)]
+pub struct UpdateFirst<M>(PhantomData<M>);
+
+impl<M: Load> Load for UpdateFirst<M> {
+    type Output = Option<M::Output>;
+
+    fn ty() -> stmt::Type {
+        M::ty()
+    }
+
+    fn load(value: stmt::Value) -> Result<Self::Output> {
+        match value {
+            stmt::Value::List(values) => values.into_iter().next().map(M::load).transpose(),
+            value => M::load(value).map(Some),
+        }
+    }
+}
+
+/// Return marker for one model returned by an update.
+#[doc(hidden)]
+pub struct UpdateOne<M>(PhantomData<M>);
+
+impl<M: Load> Load for UpdateOne<M> {
+    type Output = M::Output;
+
+    fn ty() -> stmt::Type {
+        M::ty()
+    }
+
+    fn load(value: stmt::Value) -> Result<Self::Output> {
+        UpdateFirst::<M>::load(value)?.ok_or_else(|| {
+            toasty_core::Error::record_not_found("update returned no matching records")
+        })
+    }
+}
+
 /// A typed update statement.
 ///
 /// `Update` modifies records matching a selection (typically derived from a
@@ -20,8 +77,11 @@ use toasty_core::stmt;
 /// Generated update-builders wrap this type and expose typed setter methods.
 /// You rarely construct `Update` by hand.
 ///
-/// By default, an update returns the changed records. Call
-/// [`set_returning_none`](Update::set_returning_none) to suppress this.
+/// An `Update` constructed directly returns changed records by default. A
+/// generated query update returns its affected count unless one of its
+/// `return_*` methods selects models instead. Call
+/// [`set_returning_none`](Update::set_returning_none) to suppress a raw typed
+/// update's result.
 pub struct Update<T> {
     pub(crate) untyped: stmt::Update,
     _p: PhantomData<T>,
@@ -206,6 +266,49 @@ impl<T> Update<T> {
         self.untyped.returning = None;
     }
 
+    /// Change the typed result and untyped returning clause together.
+    #[doc(hidden)]
+    pub fn with_returning<R>(mut self, returning: stmt::Returning) -> Update<R> {
+        self.untyped.returning = Some(returning);
+        Update::from_untyped(self.untyped)
+    }
+
+    /// Return values from before the update.
+    ///
+    /// This preserves the result cardinality selected by `return_all()`,
+    /// `return_first()`, or `return_one()`.
+    pub fn returning_old(mut self) -> Self {
+        let returning = self
+            .untyped
+            .returning
+            .take()
+            .expect("returning_old() requires a model-returning update");
+        assert!(
+            returning.is_model(),
+            "returning_old() requires a model-returning update"
+        );
+        self.untyped.returning = Some(returning.into_old());
+        self
+    }
+
+    /// Return values from after the update explicitly.
+    ///
+    /// This preserves the result cardinality selected by `return_all()`,
+    /// `return_first()`, or `return_one()`.
+    pub fn returning_new(mut self) -> Self {
+        let returning = self
+            .untyped
+            .returning
+            .take()
+            .expect("returning_new() requires a model-returning update");
+        assert!(
+            returning.is_model(),
+            "returning_new() requires a model-returning update"
+        );
+        self.untyped.returning = Some(returning.into_new());
+        self
+    }
+
     /// Consume this typed update and return the untyped core statement.
     ///
     /// # Examples
@@ -255,6 +358,14 @@ impl<T: Load> Update<T> {
     /// ```
     pub async fn exec(self, executor: &mut dyn Executor) -> Result<T::Output> {
         executor.exec(self.into()).await
+    }
+}
+
+impl<T> super::IntoStatement for Update<T> {
+    type Returning = T;
+
+    fn into_statement(self) -> super::Statement<T> {
+        self.into()
     }
 }
 

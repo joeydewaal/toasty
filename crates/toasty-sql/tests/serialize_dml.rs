@@ -279,6 +279,20 @@ fn update_with_returning() {
 }
 
 #[test]
+fn update_with_returning_old_postgresql() {
+    let schema = users_schema();
+    let returning = Some(Returning::Project(Expr::record([col(0, 0), col(0, 1)])).into_old());
+    expect![[
+        r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING old."id" AS column1, old."name" AS column2;"#
+    ]]
+    .assert_eq(&render(
+        Flavor::Postgresql,
+        &schema,
+        update_stmt(true, returning),
+    ));
+}
+
+#[test]
 #[should_panic(expected = "MySQL does not support the RETURNING clause with UPDATE")]
 fn update_returning_panics_on_mysql() {
     let schema = users_schema();

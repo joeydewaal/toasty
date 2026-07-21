@@ -420,7 +420,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
         let arg_ty_stack = ArgTyStack::new(args);
 
         match returning {
-            Returning::Model { .. } => {
+            Returning::Model { .. } | Returning::ModelUnloaded { .. } => {
                 let ty = Type::Model(
                     self.target
                         .model_id()
@@ -430,12 +430,17 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
                 if single { ty } else { Type::list(ty) }
             }
             Returning::Changed => todo!(),
+            Returning::Count => Type::U64,
             Returning::Project(expr) => {
                 let ty = self.infer_expr_ty2(&arg_ty_stack, expr, false);
 
                 if single { ty } else { Type::list(ty) }
             }
             Returning::Expr(expr) => self.infer_expr_ty2(&arg_ty_stack, expr, true),
+            Returning::First { returning, .. } | Returning::One { returning, .. } => {
+                self.infer_returning_ty(returning, args, single)
+            }
+            Returning::Old(returning) => self.infer_returning_ty(returning, args, single),
         }
     }
 

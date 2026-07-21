@@ -46,6 +46,9 @@ pub(crate) use query_pk::QueryPk;
 mod rmw;
 pub(crate) use rmw::ReadModifyWrite;
 
+mod return_first;
+pub(crate) use return_first::ReturnFirst;
+
 mod scan;
 pub(crate) use scan::Scan;
 
@@ -143,7 +146,7 @@ impl Engine {
             tracing::trace!("final result from var {:?}:\n{:#?}", returning, response);
 
             let value_stream = match response.values {
-                Rows::Count(_) => ValueStream::default(),
+                Rows::Count(count) => return Ok(ExecResponse::count(count)),
                 Rows::Value(stmt::Value::List(items)) => ValueStream::from_vec(items),
                 // TODO have the public API be able to handle single rows
                 Rows::Value(value) => ValueStream::from_vec(vec![value]),
@@ -176,6 +179,7 @@ impl Exec<'_> {
             Action::NestedMerge(action) => self.action_nested_merge(action).await,
             Action::QueryPk(action) => self.action_query_pk(action).await,
             Action::ReadModifyWrite(action) => self.action_read_modify_write(action).await,
+            Action::ReturnFirst(action) => self.action_return_first(action).await,
             Action::Scan(action) => self.action_scan(action).await,
             Action::Project(action) => self.action_project(action).await,
             Action::SetVar(action) => self.action_set_var(action),

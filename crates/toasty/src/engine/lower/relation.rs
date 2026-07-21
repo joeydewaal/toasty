@@ -42,6 +42,11 @@ trait RelationSource: std::fmt::Debug {
     /// Update a returning field expression
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr);
 
+    /// Whether relation mutations contribute to the source's return value.
+    fn needs_returning_field(&self) -> bool {
+        true
+    }
+
     /// Whether the source might produce zero rows. When true, relation
     /// mutations must be wrapped in a conditional to avoid FK updates when
     /// the source filter doesn't match.
@@ -411,10 +416,14 @@ impl LowerStatement<'_, '_> {
             stmt.source.single = false;
         }
 
-        // Run the canonical pipeline on the synthesized child insert and
-        // stitch it onto the parent as an `Expr::Arg`.
-        let arg = self.lower_sub_stmt(stmt::Statement::Insert(stmt));
-        source.set_returning_field(_field, arg);
+        if source.needs_returning_field() {
+            // Run the canonical pipeline on the synthesized child insert and
+            // stitch it onto the parent as an `Expr::Arg`.
+            let arg = self.lower_sub_stmt(stmt::Statement::Insert(stmt));
+            source.set_returning_field(_field, arg);
+        } else {
+            self.new_dependency(stmt);
+        }
     }
 
     fn plan_mut_belongs_to(
@@ -822,7 +831,7 @@ impl RelationSource for UpdateRelationSource<'_> {
     }
 
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
-        debug_assert!(self.returning_changed, "TODO");
+        debug_assert!(self.returning_changed);
 
         let Some(stmt::Returning::Project(stmt::Expr::Cast(expr_cast))) = self.returning else {
             todo!("UpdateRelationSource={self:#?}")
@@ -842,6 +851,10 @@ impl RelationSource for UpdateRelationSource<'_> {
         };
 
         set_returning_slot(record, position, expr, field.deferred);
+    }
+
+    fn needs_returning_field(&self) -> bool {
+        self.returning_changed
     }
 
     fn needs_existence_check(&self) -> bool {

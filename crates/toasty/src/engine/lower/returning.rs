@@ -348,17 +348,21 @@ impl LowerStatement<'_, '_> {
     }
 }
 
-/// Constantize an update's returning clause from its lowered, column-indexed
-/// assignments: column references whose assignment is a constant `Set` are
-/// inlined, and a fully-constant projection is evaluated now, sparing the
-/// runtime returning path. A projection that still needs data (an unassigned
-/// column, a relative mutation) is left for runtime.
+/// Constantize an update's post-mutation returning clause from its lowered,
+/// column-indexed assignments: column references whose assignment is a
+/// constant `Set` are inlined, and a fully-constant projection is evaluated
+/// now, sparing the runtime returning path. A projection that still needs data
+/// (an unassigned column, a relative mutation) is left for runtime.
 pub(super) fn constantize_update_returning(
     cx: stmt::ExprContext<'_>,
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
 ) {
-    let stmt::Returning::Project(project) = returning else {
+    if returning.is_old() {
+        return;
+    }
+
+    let Some(project) = returning.as_project_mut() else {
         // Already a constant value (e.g., empty record for batch
         // unit-returning); nothing to constantize.
         return;
@@ -378,7 +382,7 @@ pub(super) fn constantize_update_returning(
         source: ConstantizeSource::UpdateAssignments { assignments },
     };
     if let Ok(row) = project.eval(input) {
-        *returning = stmt::Returning::Project(row.into());
+        returning.set_project(row);
     }
 }
 

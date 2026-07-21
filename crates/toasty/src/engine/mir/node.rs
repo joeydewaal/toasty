@@ -55,6 +55,7 @@ impl Node {
             Operation::Upsert(m) => &m.ty,
             Operation::NestedMerge(_m) => todo!(),
             Operation::ReadModifyWrite(m) => &m.ty,
+            Operation::ReturnFirst(m) => &m.ty,
         }
     }
 
@@ -75,6 +76,7 @@ impl Node {
             Operation::NestedMerge(op) => op.to_exec(logical_plan, self, var_table).into(),
             Operation::Project(op) => op.to_exec(logical_plan, self, var_table).into(),
             Operation::ReadModifyWrite(op) => op.to_exec(logical_plan, self, var_table).into(),
+            Operation::ReturnFirst(op) => op.to_exec(logical_plan, self, var_table).into(),
             Operation::QueryPk(op) => op.to_exec(logical_plan, self, var_table).into(),
             Operation::Scan(op) => op.to_exec(logical_plan, self, var_table).into(),
             Operation::UpdateByKey(op) => op.to_exec(logical_plan, self, var_table).into(),

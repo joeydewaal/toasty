@@ -1,6 +1,6 @@
 use crate::engine::exec::{
     DeleteByKey, Eval, ExecStatement, Filter, FindPkByIndex, GetByKey, Guard, NestedMerge, Project,
-    QueryPk, ReadModifyWrite, Scan, SetVar, UpdateByKey, Upsert,
+    QueryPk, ReadModifyWrite, ReturnFirst, Scan, SetVar, UpdateByKey, Upsert,
 };
 
 use std::fmt;
@@ -46,6 +46,9 @@ pub(crate) enum Action {
     /// Perform an atomic operation in multiple steps
     ReadModifyWrite(Box<ReadModifyWrite>),
 
+    /// Narrow mutation results to the first ordered row.
+    ReturnFirst(ReturnFirst),
+
     /// Set a variable to a const
     SetVar(SetVar),
 
@@ -71,6 +74,7 @@ impl Action {
             Action::Project(_) => "project",
             Action::QueryPk(_) => "query_pk",
             Action::ReadModifyWrite(_) => "read_modify_write",
+            Action::ReturnFirst(_) => "return_first",
             Action::Scan(_) => "scan",
             Action::SetVar(_) => "set_var",
             Action::UpdateByKey(_) => "update_by_key",
@@ -99,6 +103,7 @@ impl Action {
             | Action::Guard(_)
             | Action::NestedMerge(_)
             | Action::Project(_)
+            | Action::ReturnFirst(_)
             | Action::SetVar(_) => false,
         }
     }
@@ -117,6 +122,7 @@ impl fmt::Debug for Action {
             Self::NestedMerge(a) => a.fmt(f),
             Self::QueryPk(a) => a.fmt(f),
             Self::ReadModifyWrite(a) => a.fmt(f),
+            Self::ReturnFirst(a) => a.fmt(f),
             Self::Scan(a) => a.fmt(f),
             Self::Project(a) => a.fmt(f),
             Self::SetVar(a) => a.fmt(f),

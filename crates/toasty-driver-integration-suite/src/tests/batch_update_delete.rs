@@ -8,12 +8,13 @@ pub async fn batch_two_updates_same_model(t: &mut Test) -> Result<()> {
     User::create().name("Bob").exec(&mut db).await?;
 
     t.log().clear();
-    let ((), ()): ((), ()) = toasty::batch((
+    let counts: (u64, u64) = toasty::batch((
         User::filter_by_name("Alice").update().name("Alice2"),
         User::filter_by_name("Bob").update().name("Bob2"),
     ))
     .exec(&mut db)
     .await?;
+    assert_eq!(counts, (1, 1));
 
     // Verify updates applied
     let alice: Vec<User> = User::filter_by_name("Alice2").exec(&mut db).await?;
@@ -55,12 +56,13 @@ pub async fn batch_update_and_delete(t: &mut Test) -> Result<()> {
     User::create().name("Alice").exec(&mut db).await?;
     Post::create().title("Hello").exec(&mut db).await?;
 
-    let ((), ()): ((), ()) = toasty::batch((
+    let (count, ()): (u64, ()) = toasty::batch((
         User::filter_by_name("Alice").update().name("Alice2"),
         Post::filter_by_title("Hello").delete(),
     ))
     .exec(&mut db)
     .await?;
+    assert_eq!(count, 1);
 
     // User updated
     let users: Vec<User> = User::filter_by_name("Alice2").exec(&mut db).await?;
@@ -81,7 +83,7 @@ pub async fn batch_all_four_statement_types(t: &mut Test) -> Result<()> {
     User::create().name("Bob").exec(&mut db).await?;
 
     t.log().clear();
-    let (queried, created, (), ()): (Vec<User>, User, (), ()) = toasty::batch((
+    let (queried, created, count, ()): (Vec<User>, User, u64, ()) = toasty::batch((
         User::filter_by_name("Alice"),
         User::create().name("Carol"),
         User::filter_by_name("Alice").update().name("Alice2"),
@@ -92,6 +94,7 @@ pub async fn batch_all_four_statement_types(t: &mut Test) -> Result<()> {
 
     assert_struct!(queried, [{ name: "Alice" }]);
     assert_eq!(created.name, "Carol");
+    assert_eq!(count, 1);
 
     // Verify update applied
     let alice: Vec<User> = User::filter_by_name("Alice2").exec(&mut db).await?;

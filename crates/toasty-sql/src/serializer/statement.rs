@@ -485,6 +485,16 @@ impl ToSql for &stmt::OrderByExpr {
 impl ToSql for &stmt::Returning {
     fn to_sql(self, f: &mut super::Formatter<'_>) {
         match self {
+            stmt::Returning::Old(returning) => {
+                assert!(
+                    matches!(f.serializer.flavor, Flavor::Postgresql),
+                    "old values in RETURNING are only supported by PostgreSQL"
+                );
+                let returning_old = f.returning_old;
+                f.returning_old = true;
+                returning.as_ref().to_sql(f);
+                f.returning_old = returning_old;
+            }
             stmt::Returning::Project(stmt::Expr::Record(expr_record)) => {
                 // Alias every projected field positionally (`AS column1`, ...).
                 // A nested SELECT/RETURNING referenced from an outer query (e.g.

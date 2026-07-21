@@ -55,6 +55,18 @@ pub struct Capability {
     /// SQL: Mysql doesn't support returning clauses from insert / update queries
     pub returning_from_mutation: bool,
 
+    /// Whether updates can return complete post-update models.
+    pub update_returning_new: bool,
+
+    /// Whether updates can return complete pre-update models.
+    pub update_returning_old: bool,
+
+    /// Whether model-returning updates may assign managed unique-index fields.
+    ///
+    /// Drivers that maintain uniqueness through auxiliary writes must reject
+    /// this combination before executing any part of a multi-row update.
+    pub update_returning_unique: bool,
+
     /// Whether an upsert may target the table's primary key.
     ///
     /// When `false`, the verifier returns `unsupported_feature` before
@@ -574,6 +586,9 @@ impl Capability {
         cte_with_update: false,
         select_for_update: false,
         returning_from_mutation: true,
+        update_returning_new: true,
+        update_returning_old: false,
+        update_returning_unique: true,
         upsert_primary_key: true,
         upsert_unique: true,
         upsert_branch_assignments: true,
@@ -663,6 +678,7 @@ impl Capability {
         storage_types: StorageTypes::POSTGRESQL,
         schema_mutations: SchemaMutations::POSTGRESQL,
         select_for_update: true,
+        update_returning_old: true,
         auto_increment: true,
         max_auto_increment_integer_width: None,
         bigdecimal_implemented: false,
@@ -724,6 +740,8 @@ impl Capability {
         schema_mutations: SchemaMutations::MYSQL,
         select_for_update: true,
         returning_from_mutation: false,
+        update_returning_new: false,
+        update_returning_old: false,
         upsert_primary_key: false,
         upsert_unique: false,
         upsert_branch_assignments: false,
@@ -800,6 +818,9 @@ impl Capability {
         cte_with_update: false,
         select_for_update: false,
         returning_from_mutation: false,
+        update_returning_new: true,
+        update_returning_old: true,
+        update_returning_unique: false,
         upsert_primary_key: true,
         upsert_unique: false,
         upsert_branch_assignments: false,

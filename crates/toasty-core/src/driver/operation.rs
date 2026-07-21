@@ -42,7 +42,7 @@ mod typed_value;
 pub use typed_value::TypedValue;
 
 mod update_by_key;
-pub use update_by_key::UpdateByKey;
+pub use update_by_key::{UpdateByKey, UpdateReturning};
 
 mod upsert;
 pub use upsert::Upsert;

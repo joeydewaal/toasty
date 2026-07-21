@@ -38,8 +38,8 @@ impl stmt::Input for RecordInput<'_> {
 /// `ReturnValuesOnConditionCheckFailure::AllOld` is set.  We evaluate the
 /// filter in-memory against that snapshot:
 ///
-/// - No old item → the record didn't exist; the filter trivially didn't
-///   match → count 0.
+/// - No old item and no user condition → the existence check failed → count 0.
+/// - No old item with a user condition → preserve the condition failure.
 /// - Old item exists, filter evaluates to `false` → count 0.
 /// - Old item exists, filter evaluates to `true` (or there is no filter) →
 ///   the condition must have been the failing part → error.
@@ -47,13 +47,14 @@ fn filter_failed(
     old_item: Option<&HashMap<String, AttributeValue>>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    condition: Option<&stmt::Expr>,
 ) -> bool {
-    let Some(filter) = filter else {
-        return false;
+    let Some(item) = old_item else {
+        return condition.is_none();
     };
 
-    let Some(item) = old_item else {
-        return true;
+    let Some(filter) = filter else {
+        return false;
     };
 
     let record = item_to_record(item, table.columns.iter()).unwrap();
@@ -68,9 +69,10 @@ fn on_update_item_condition_failed(
     message: Option<&str>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    condition: Option<&stmt::Expr>,
     returning: bool,
 ) -> Result<ExecResponse> {
-    if filter_failed(item, table, filter) {
+    if filter_failed(item, table, filter, condition) {
         if returning {
             Ok(ExecResponse::empty_value_stream())
         } else {
@@ -86,20 +88,22 @@ fn on_update_item_condition_failed(
 }
 
 /// Interprets a `TransactionCanceledException` from `transact_write_items`:
-/// if every `ConditionalCheckFailed` reason was caused by the filter return an
-/// empty response; if any was caused by the condition expression surface a
-/// condition error.
+/// if the base-table update failed its filter or existence check, return an
+/// empty response. A base-table condition failure or any later transaction
+/// item failure is a condition error.
 fn on_transaction_cancelled(
     reasons: &[CancellationReason],
     message: Option<&str>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    condition: Option<&stmt::Expr>,
     returning: bool,
 ) -> Result<ExecResponse> {
     let any_condition_failed = reasons
         .iter()
-        .filter(|r| r.code() == Some("ConditionalCheckFailed"))
-        .any(|r| !filter_failed(r.item(), table, filter));
+        .enumerate()
+        .filter(|(_, r)| r.code() == Some("ConditionalCheckFailed"))
+        .any(|(index, r)| index != 0 || !filter_failed(r.item(), table, filter, condition));
 
     if any_condition_failed {
         Err(toasty_core::Error::condition_failed(
@@ -152,14 +156,16 @@ impl Connection {
             }
             _ => None,
         };
+        let primary_key = table.primary_key_columns().next().unwrap();
+        let primary_key = expr_attrs.column(primary_key).to_string();
+        let item_exists = format!("attribute_exists({primary_key})");
+        let filter_expression = Some(match filter_expression {
+            Some(filter_expression) => format!("({item_exists}) AND ({filter_expression})"),
+            None => item_exists,
+        });
 
         let mut update_expression_set = String::new();
         let mut update_expression_remove = String::new();
-
-        // Bound value per assigned column index. Used below to seed the
-        // returning-row placeholders; only the transact path (which can't
-        // fetch `UPDATED_NEW`) actually surfaces these seeds.
-        let mut bound_values: HashMap<usize, &stmt::Value> = HashMap::new();
 
         for (projection, assignment) in op.assignments.iter() {
             enum AssignKind {
@@ -196,8 +202,6 @@ impl Connection {
             };
 
             let column_ref = table.resolve(projection);
-            bound_values.insert(column_ref.id.index, value);
-
             let column = expr_attrs.column(column_ref).to_string();
 
             match kind {
@@ -271,32 +275,26 @@ impl Connection {
         }
 
         // Build the returning row from the explicit column list the engine
-        // requested — exactly these columns, in this order. The engine inlines
-        // `Set` values at plan time and injects the engine-managed `#[version]`
-        // bump outside the returning projection, so neither appears in
-        // `op.returning`; the driver no longer has to infer the row shape from
-        // the assignments. Each column is seeded with a placeholder, then
-        // refreshed below from the `UPDATED_NEW` response with its post-update
-        // value.
+        // requested. ALL_NEW and ALL_OLD both return the complete item, from
+        // which the requested columns are decoded in order.
         let mut ret = vec![];
-        let mut refresh_after_update: Vec<(usize, &db::Column)> = vec![];
+        let mut returning_columns: Vec<&db::Column> = vec![];
 
-        if let Some(columns) = &op.returning {
-            for column_id in columns {
+        if let Some(returning) = &op.returning {
+            for column_id in returning.columns() {
                 let column = schema.column(*column_id);
-                let placeholder = bound_values
-                    .get(&column_id.index)
-                    .map(|value| (*value).clone())
-                    .unwrap_or(stmt::Value::Null);
-                refresh_after_update.push((ret.len(), column));
-                ret.push(placeholder);
+                returning_columns.push(column);
+                ret.push(stmt::Value::Null);
             }
         }
 
-        // The seeded placeholders are not the post-update column values.
-        // Request `UPDATED_NEW` so the response carries the actual new
-        // attribute values and we can replace the placeholders below.
-        let needs_updated_new = !refresh_after_update.is_empty();
+        let return_value = op.returning.as_ref().map(|returning| {
+            if returning.is_old() {
+                ReturnValue::AllOld
+            } else {
+                ReturnValue::AllNew
+            }
+        });
 
         match &unique_indices[..] {
             [] => {
@@ -322,7 +320,7 @@ impl Connection {
                     .return_values_on_condition_check_failure(
                         ReturnValuesOnConditionCheckFailure::AllOld,
                     )
-                    .set_return_values(needs_updated_new.then_some(ReturnValue::UpdatedNew))
+                    .set_return_values(return_value.clone())
                     .send()
                     .await;
 
@@ -335,6 +333,7 @@ impl Connection {
                                 cce.message.as_deref(),
                                 table,
                                 op.filter.as_ref(),
+                                op.condition.as_ref(),
                                 op.returning.is_some(),
                             );
                         }
@@ -347,10 +346,10 @@ impl Connection {
                     }
                 };
 
-                if needs_updated_new && let Some(attrs) = output.attributes() {
-                    for (idx, column) in &refresh_after_update {
+                if let Some(attrs) = output.attributes() {
+                    for (idx, column) in returning_columns.iter().enumerate() {
                         if let Some(attr) = attrs.get(&column.name) {
-                            ret[*idx] = Value::from_ddb(&column.ty, attr).into_inner();
+                            ret[idx] = Value::from_ddb(&column.ty, attr).into_inner();
                         }
                     }
                 }
@@ -419,10 +418,11 @@ impl Connection {
                     .map_err(toasty_core::Error::driver_operation_failed)?;
 
                 let Some(mut curr_unique_values) = res.item else {
-                    return Err(toasty_core::Error::record_not_found(format!(
-                        "table={} key={:?}",
-                        table.name, key
-                    )));
+                    return Ok(if op.returning.is_some() {
+                        ExecResponse::empty_value_stream()
+                    } else {
+                        ExecResponse::count(0)
+                    });
                 };
 
                 // Resolve each unique-column assignment to a concrete post-update
@@ -513,24 +513,46 @@ impl Connection {
                         .return_values_on_condition_check_failure(
                             ReturnValuesOnConditionCheckFailure::AllOld,
                         )
+                        .set_return_values(return_value.clone())
                         .send()
                         .await;
 
-                    if let Err(SdkError::ServiceError(e)) = res {
-                        if let UpdateItemError::ConditionalCheckFailedException(cce) = e.err() {
-                            return on_update_item_condition_failed(
-                                cce.item(),
-                                cce.message.as_deref(),
-                                table,
-                                op.filter.as_ref(),
-                                op.returning.is_some(),
-                            );
+                    match res {
+                        Ok(output) => {
+                            if let Some(attrs) = output.attributes() {
+                                for (idx, column) in returning_columns.iter().enumerate() {
+                                    if let Some(attr) = attrs.get(&column.name) {
+                                        ret[idx] = Value::from_ddb(&column.ty, attr).into_inner();
+                                    }
+                                }
+                            }
                         }
-                        return Err(toasty_core::Error::driver_operation_failed(
-                            SdkError::ServiceError(e),
-                        ));
+                        Err(SdkError::ServiceError(e)) => {
+                            if let UpdateItemError::ConditionalCheckFailedException(cce) = e.err() {
+                                return on_update_item_condition_failed(
+                                    cce.item(),
+                                    cce.message.as_deref(),
+                                    table,
+                                    op.filter.as_ref(),
+                                    op.condition.as_ref(),
+                                    op.returning.is_some(),
+                                );
+                            }
+                            return Err(toasty_core::Error::driver_operation_failed(
+                                SdkError::ServiceError(e),
+                            ));
+                        }
+                        Err(other) => {
+                            return Err(toasty_core::Error::driver_operation_failed(other));
+                        }
                     }
                 } else {
+                    if op.returning.is_some() {
+                        return Err(toasty_core::Error::unsupported_feature(
+                            "DynamoDB cannot return models from updates that require TransactWriteItems",
+                        ));
+                    }
+
                     assert!(
                         updated_unique_attrs.len() + set_unique_attrs.len() == 1,
                         "TODO: support more than one unique attr"
@@ -565,6 +587,9 @@ impl Connection {
                                     .set_update_expression(Some(update_expression))
                                     .set_expression_attribute_names(Some(expr_attrs.attr_names))
                                     .set_expression_attribute_values(Some(expr_attrs.attr_values))
+                                    .return_values_on_condition_check_failure(
+                                        ReturnValuesOnConditionCheckFailure::AllOld,
+                                    )
                                     .build()
                                     .unwrap(),
                             )
@@ -653,6 +678,7 @@ impl Connection {
                                 tce.message(),
                                 table,
                                 op.filter.as_ref(),
+                                op.condition.as_ref(),
                                 op.returning.is_some(),
                             );
                         }
@@ -677,9 +703,9 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::filter_failed;
+    use super::{filter_failed, on_transaction_cancelled};
     use crate::db;
-    use aws_sdk_dynamodb::types::AttributeValue;
+    use aws_sdk_dynamodb::types::{AttributeValue, CancellationReason};
     use std::collections::HashMap;
     use toasty_core::{
         schema::db::{Column, ColumnId, IndexId, PrimaryKey, TableId, Type},
@@ -731,12 +757,20 @@ mod tests {
         HashMap::from([("status".to_string(), AttributeValue::S(status.to_string()))])
     }
 
-    // No filter at all: the condition expression failed → caller should surface an error,
-    // not return count 0.  filter_failed must return false.
+    // A missing item without a user condition fails the driver's existence
+    // condition and returns count 0.
     #[test]
-    fn no_filter_returns_false() {
+    fn missing_item_without_condition_returns_true() {
         let table = make_table();
-        assert!(!filter_failed(None, &table, None));
+        assert!(filter_failed(None, &table, None, None));
+    }
+
+    // A missing item with a user condition preserves the condition failure.
+    #[test]
+    fn missing_item_with_condition_returns_false() {
+        let table = make_table();
+        let condition = status_eq_active();
+        assert!(!filter_failed(None, &table, None, Some(&condition)));
     }
 
     // Filter present but item is missing (record was deleted between read and check):
@@ -745,7 +779,7 @@ mod tests {
     fn missing_item_with_filter_returns_true() {
         let table = make_table();
         let filter = status_eq_active();
-        assert!(filter_failed(None, &table, Some(&filter)));
+        assert!(filter_failed(None, &table, Some(&filter), None));
     }
 
     // Item present and filter matches: the filter was NOT the failing part, so the
@@ -754,8 +788,14 @@ mod tests {
     fn matching_item_returns_false() {
         let table = make_table();
         let filter = status_eq_active();
+        let condition = status_eq_active();
         let item = item_with_status("active");
-        assert!(!filter_failed(Some(&item), &table, Some(&filter)));
+        assert!(!filter_failed(
+            Some(&item),
+            &table,
+            Some(&filter),
+            Some(&condition)
+        ));
     }
 
     // Item present but filter does not match: the filter failed → count 0.
@@ -763,7 +803,56 @@ mod tests {
     fn non_matching_item_returns_true() {
         let table = make_table();
         let filter = status_eq_active();
+        let condition = status_eq_active();
         let item = item_with_status("inactive");
-        assert!(filter_failed(Some(&item), &table, Some(&filter)));
+        assert!(filter_failed(
+            Some(&item),
+            &table,
+            Some(&filter),
+            Some(&condition)
+        ));
+    }
+
+    #[test]
+    fn missing_base_item_in_transaction_returns_zero() {
+        let table = make_table();
+        let reasons = [CancellationReason::builder()
+            .code("ConditionalCheckFailed")
+            .build()];
+
+        let response = on_transaction_cancelled(&reasons, None, &table, None, None, false).unwrap();
+
+        assert_eq!(response.values.into_count(), 0);
+    }
+
+    #[test]
+    fn existing_base_item_condition_failure_returns_error() {
+        let table = make_table();
+        let reasons = [CancellationReason::builder()
+            .code("ConditionalCheckFailed")
+            .set_item(Some(item_with_status("active")))
+            .build()];
+
+        let condition = status_eq_active();
+        let error = on_transaction_cancelled(&reasons, None, &table, None, Some(&condition), false)
+            .unwrap_err();
+
+        assert!(error.is_condition_failed());
+    }
+
+    #[test]
+    fn unique_index_condition_failure_returns_error() {
+        let table = make_table();
+        let reasons = [
+            CancellationReason::builder().code("None").build(),
+            CancellationReason::builder()
+                .code("ConditionalCheckFailed")
+                .build(),
+        ];
+
+        let error =
+            on_transaction_cancelled(&reasons, None, &table, None, None, false).unwrap_err();
+
+        assert!(error.is_condition_failed());
     }
 }
