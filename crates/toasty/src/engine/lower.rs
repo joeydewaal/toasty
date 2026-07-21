@@ -610,6 +610,23 @@ impl LowerStatement<'_, '_> {
 }
 
 impl visit_mut::VisitMut for LowerStatement<'_, '_> {
+    fn visit_expr_cast_mut(&mut self, i: &mut stmt::ExprCast) {
+        let from = match i.expr.as_ref() {
+            stmt::Expr::Reference(expr_reference @ stmt::ExprReference::Column(column))
+                if column.nesting > 0 =>
+            {
+                Some(self.expr_cx.infer_expr_reference_ty(expr_reference))
+            }
+            _ => None,
+        };
+
+        stmt::visit_mut::visit_expr_cast_mut(self, i);
+
+        if i.from.is_none() {
+            i.from = from;
+        }
+    }
+
     fn visit_order_by_expr_mut(&mut self, node: &mut stmt::OrderByExpr) {
         // First, run the default visitor to lower sub-expressions
         self.visit_expr_mut(&mut node.expr);
@@ -1444,7 +1461,7 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
                 Some(self.combine_record_op(op, std::mem::take(&mut rec.fields), val_exprs))
             }
             (stmt::Expr::Cast(expr_cast), _) | (_, stmt::Expr::Cast(expr_cast)) => {
-                let target_ty = self.capability().native_type_for(&expr_cast.ty);
+                let target_ty = self.comparison_operand_ty(expr_cast);
                 self.cast_expr(lhs, &target_ty);
                 self.cast_expr(rhs, &target_ty);
                 None
@@ -1514,7 +1531,7 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
                 None
             }
             (stmt::Expr::Cast(expr_cast), list) => {
-                let target_ty = self.capability().native_type_for(&expr_cast.ty);
+                let target_ty = self.comparison_operand_ty(expr_cast);
                 self.cast_expr(expr, &target_ty);
 
                 match list {
@@ -1974,6 +1991,17 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
             }
             _ => todo!("cast_expr: cannot cast {expr:#?} to {target_ty:?}"),
         }
+    }
+
+    fn comparison_operand_ty(&self, expr_cast: &stmt::ExprCast) -> stmt::Type {
+        if expr_cast.expr.is_arg() {
+            return expr_cast
+                .from
+                .clone()
+                .unwrap_or_else(|| self.capability().native_type_for(&expr_cast.ty));
+        }
+
+        self.expr_cx.infer_expr_ty(&expr_cast.expr, &[])
     }
 }
 

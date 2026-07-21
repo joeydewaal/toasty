@@ -42,7 +42,7 @@ pub async fn select_has_one_basic(t: &mut Test) -> Result<()> {
 
     toasty::create!(User {
         name: "Alice",
-        profile: Profile::create().bio("apple a day"),
+        profile: { bio: "apple a day" },
     })
     .exec(&mut db)
     .await?;
@@ -54,6 +54,57 @@ pub async fn select_has_one_basic(t: &mut Test) -> Result<()> {
 
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].bio, "apple a day");
+
+    Ok(())
+}
+
+#[driver_test(requires(sql))]
+pub async fn select_has_one_with_text_uuid_key(t: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        #[auto]
+        #[column(type = text)]
+        id: uuid::Uuid,
+
+        name: String,
+
+        #[has_one]
+        profile: toasty::Deferred<Profile>,
+    }
+
+    #[derive(Debug, toasty::Model)]
+    struct Profile {
+        #[key]
+        #[auto]
+        #[column(type = text)]
+        id: uuid::Uuid,
+
+        #[unique]
+        #[column(type = text)]
+        user_id: Option<uuid::Uuid>,
+
+        #[belongs_to(key = user_id, references = id)]
+        user: toasty::Deferred<Option<User>>,
+
+        bio: String,
+    }
+
+    let mut db = t.setup_db(models!(User, Profile)).await;
+
+    toasty::create!(User {
+        name: "Alice",
+        profile: Profile::create().bio("apple a day"),
+    })
+    .exec(&mut db)
+    .await?;
+
+    let profiles: Vec<Profile> = User::all()
+        .select(User::fields().profile())
+        .exec(&mut db)
+        .await?;
+
+    assert_struct!(profiles, [_ { bio: "apple a day", .. }]);
 
     Ok(())
 }

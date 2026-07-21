@@ -146,6 +146,45 @@ pub async fn specify_uuid_as_text(test: &mut Test) -> Result<()> {
     Ok(())
 }
 
+#[driver_test]
+pub async fn query_uuid_as_text(test: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct Item {
+        #[key]
+        #[auto]
+        id: uuid::Uuid,
+
+        #[column(type = text)]
+        val: uuid::Uuid,
+    }
+
+    let mut db = test.setup_db(models!(Item)).await;
+    let matching = uuid::Uuid::new_v4();
+
+    toasty::create!(Item::[
+        { val: matching },
+        { val: uuid::Uuid::new_v4() },
+    ])
+    .exec(&mut db)
+    .await?;
+
+    let items = Item::filter(Item::fields().val().eq(matching))
+        .exec(&mut db)
+        .await?;
+    assert_struct!(items, [_ { val: == matching, .. }]);
+
+    let items = Item::filter(
+        Item::fields()
+            .val()
+            .in_list([matching, uuid::Uuid::new_v4()]),
+    )
+    .exec(&mut db)
+    .await?;
+    assert_struct!(items, [_ { val: == matching, .. }]);
+
+    Ok(())
+}
+
 #[driver_test(id(ID))]
 pub async fn specify_uuid_as_bytes(test: &mut Test) -> Result<()> {
     #[derive(Debug, toasty::Model)]
