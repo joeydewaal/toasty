@@ -88,10 +88,8 @@ impl Type {
             (Value::Date(value), Type::String) => Value::String(value.to_string()),
             (Value::Time(value), Type::String) => Value::String(format!("{value:.9}")),
             (Value::DateTime(value), Type::String) => Value::String(format!("{value:.9}")),
-            // ISO 8601 has no separate millisecond, microsecond, or nanosecond
-            // designators, so Jiff folds those fields into fractional seconds.
-            // The duration is preserved, but an unbalanced span may not remain
-            // fieldwise-equal after parsing the stored text.
+            // ISO 8601 folds subsecond fields into fractional seconds, preserving
+            // duration but not fieldwise equality after parsing.
             (Value::Span(value), Type::String) => Value::String(value.to_string()),
 
             // UTC <-> Zoned
