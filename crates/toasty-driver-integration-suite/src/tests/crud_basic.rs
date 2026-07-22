@@ -510,3 +510,23 @@ pub async fn update_and_delete_snippets(test: &mut Test) -> Result<()> {
     assert_err!(User::get_by_id(&mut db, user.id).await);
     Ok(())
 }
+
+#[driver_test]
+pub async fn query_update_missing_exact_key_does_not_insert(t: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        id: uuid::Uuid,
+
+        name: String,
+    }
+
+    let mut db = t.setup_db(models!(User)).await;
+    let id = uuid::Uuid::new_v4();
+
+    User::update_by_id(id).name("missing").exec(&mut db).await?;
+
+    assert_err!(User::get_by_id(&mut db, &id).await);
+
+    Ok(())
+}

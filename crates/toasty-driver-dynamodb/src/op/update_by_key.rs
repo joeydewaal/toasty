@@ -38,8 +38,8 @@ impl stmt::Input for RecordInput<'_> {
 /// `ReturnValuesOnConditionCheckFailure::AllOld` is set.  We evaluate the
 /// filter in-memory against that snapshot:
 ///
-/// - No old item → the record didn't exist; the filter trivially didn't
-///   match → count 0.
+/// - No old item and no user condition → the existence check failed → count 0.
+/// - No old item with a user condition → preserve the condition failure.
 /// - Old item exists, filter evaluates to `false` → count 0.
 /// - Old item exists, filter evaluates to `true` (or there is no filter) →
 ///   the condition must have been the failing part → error.
@@ -47,13 +47,16 @@ fn filter_failed(
     old_item: Option<&HashMap<String, AttributeValue>>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    has_condition: bool,
 ) -> bool {
-    let Some(filter) = filter else {
-        return false;
+    // A missing old image is an existence miss unless a user condition must
+    // still report condition_failed.
+    let Some(item) = old_item else {
+        return !has_condition;
     };
 
-    let Some(item) = old_item else {
-        return true;
+    let Some(filter) = filter else {
+        return false;
     };
 
     let record = item_to_record(item, table.columns.iter()).unwrap();
@@ -68,9 +71,10 @@ fn on_update_item_condition_failed(
     message: Option<&str>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    has_condition: bool,
     returning: bool,
 ) -> Result<ExecResponse> {
-    if filter_failed(item, table, filter) {
+    if filter_failed(item, table, filter, has_condition) {
         if returning {
             Ok(ExecResponse::empty_value_stream())
         } else {
@@ -86,20 +90,20 @@ fn on_update_item_condition_failed(
 }
 
 /// Interprets a `TransactionCanceledException` from `transact_write_items`:
-/// if every `ConditionalCheckFailed` reason was caused by the filter return an
-/// empty response; if any was caused by the condition expression surface a
+/// return an empty response when the filter failed, otherwise surface a
 /// condition error.
 fn on_transaction_cancelled(
     reasons: &[CancellationReason],
     message: Option<&str>,
     table: &db::Table,
     filter: Option<&stmt::Expr>,
+    has_condition: bool,
     returning: bool,
 ) -> Result<ExecResponse> {
     let any_condition_failed = reasons
         .iter()
         .filter(|r| r.code() == Some("ConditionalCheckFailed"))
-        .any(|r| !filter_failed(r.item(), table, filter));
+        .any(|r| !filter_failed(r.item(), table, filter, has_condition));
 
     if any_condition_failed {
         Err(toasty_core::Error::condition_failed(
@@ -152,6 +156,16 @@ impl Connection {
             }
             _ => None,
         };
+
+        // UpdateItem upserts missing keys. Require the partition key, which
+        // every stored item has, so a missing key matches no row.
+        let primary_key = table.primary_key_columns().next().unwrap();
+        let primary_key = expr_attrs.column(primary_key);
+        let item_exists = format!("attribute_exists({primary_key})");
+        let filter_expression = Some(match filter_expression {
+            Some(filter_expression) => format!("({item_exists}) AND ({filter_expression})"),
+            None => item_exists,
+        });
 
         let mut update_expression_set = String::new();
         let mut update_expression_remove = String::new();
@@ -335,6 +349,7 @@ impl Connection {
                                 cce.message.as_deref(),
                                 table,
                                 op.filter.as_ref(),
+                                op.condition.is_some(),
                                 op.returning.is_some(),
                             );
                         }
@@ -419,10 +434,16 @@ impl Connection {
                     .map_err(toasty_core::Error::driver_operation_failed)?;
 
                 let Some(mut curr_unique_values) = res.item else {
-                    return Err(toasty_core::Error::record_not_found(format!(
-                        "table={} key={:?}",
-                        table.name, key
-                    )));
+                    // Apply normal missing-row classification: zero without a
+                    // user condition, condition_failed with one.
+                    return on_update_item_condition_failed(
+                        None,
+                        None,
+                        table,
+                        op.filter.as_ref(),
+                        op.condition.is_some(),
+                        op.returning.is_some(),
+                    );
                 };
 
                 // Resolve each unique-column assignment to a concrete post-update
@@ -523,6 +544,7 @@ impl Connection {
                                 cce.message.as_deref(),
                                 table,
                                 op.filter.as_ref(),
+                                op.condition.is_some(),
                                 op.returning.is_some(),
                             );
                         }
@@ -565,6 +587,11 @@ impl Connection {
                                     .set_update_expression(Some(update_expression))
                                     .set_expression_attribute_names(Some(expr_attrs.attr_names))
                                     .set_expression_attribute_values(Some(expr_attrs.attr_values))
+                                    // Return the old base row to distinguish a
+                                    // filter miss from a user-condition failure.
+                                    .return_values_on_condition_check_failure(
+                                        ReturnValuesOnConditionCheckFailure::AllOld,
+                                    )
                                     .build()
                                     .unwrap(),
                             )
@@ -653,6 +680,7 @@ impl Connection {
                                 tce.message(),
                                 table,
                                 op.filter.as_ref(),
+                                op.condition.is_some(),
                                 op.returning.is_some(),
                             );
                         }
@@ -677,9 +705,9 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::filter_failed;
+    use super::{filter_failed, on_transaction_cancelled};
     use crate::db;
-    use aws_sdk_dynamodb::types::AttributeValue;
+    use aws_sdk_dynamodb::types::{AttributeValue, CancellationReason};
     use std::collections::HashMap;
     use toasty_core::{
         schema::db::{Column, ColumnId, IndexId, PrimaryKey, TableId, Type},
@@ -731,12 +759,19 @@ mod tests {
         HashMap::from([("status".to_string(), AttributeValue::S(status.to_string()))])
     }
 
-    // No filter at all: the condition expression failed → caller should surface an error,
-    // not return count 0.  filter_failed must return false.
+    // A missing item without a user condition fails the driver's existence
+    // condition and returns count 0.
     #[test]
-    fn no_filter_returns_false() {
+    fn missing_item_without_condition_returns_true() {
         let table = make_table();
-        assert!(!filter_failed(None, &table, None));
+        assert!(filter_failed(None, &table, None, false));
+    }
+
+    // A missing item with a user condition preserves the condition failure.
+    #[test]
+    fn missing_item_with_condition_returns_false() {
+        let table = make_table();
+        assert!(!filter_failed(None, &table, None, true));
     }
 
     // Filter present but item is missing (record was deleted between read and check):
@@ -745,7 +780,7 @@ mod tests {
     fn missing_item_with_filter_returns_true() {
         let table = make_table();
         let filter = status_eq_active();
-        assert!(filter_failed(None, &table, Some(&filter)));
+        assert!(filter_failed(None, &table, Some(&filter), false));
     }
 
     // Item present and filter matches: the filter was NOT the failing part, so the
@@ -755,7 +790,7 @@ mod tests {
         let table = make_table();
         let filter = status_eq_active();
         let item = item_with_status("active");
-        assert!(!filter_failed(Some(&item), &table, Some(&filter)));
+        assert!(!filter_failed(Some(&item), &table, Some(&filter), true));
     }
 
     // Item present but filter does not match: the filter failed → count 0.
@@ -764,6 +799,32 @@ mod tests {
         let table = make_table();
         let filter = status_eq_active();
         let item = item_with_status("inactive");
-        assert!(filter_failed(Some(&item), &table, Some(&filter)));
+        assert!(filter_failed(Some(&item), &table, Some(&filter), true));
+    }
+
+    #[test]
+    fn missing_base_item_in_transaction_returns_zero() {
+        let table = make_table();
+        let reasons = [CancellationReason::builder()
+            .code("ConditionalCheckFailed")
+            .build()];
+
+        let response =
+            on_transaction_cancelled(&reasons, None, &table, None, false, false).unwrap();
+
+        assert_eq!(response.values.into_count(), 0);
+    }
+
+    #[test]
+    fn existing_base_item_condition_failure_returns_error() {
+        let table = make_table();
+        let reasons = [CancellationReason::builder()
+            .code("ConditionalCheckFailed")
+            .set_item(Some(item_with_status("active")))
+            .build()];
+        let error =
+            on_transaction_cancelled(&reasons, None, &table, None, true, false).unwrap_err();
+
+        assert!(error.is_condition_failed());
     }
 }

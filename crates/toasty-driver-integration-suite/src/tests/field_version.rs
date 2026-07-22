@@ -344,6 +344,41 @@ pub async fn unique_index_stale_update_fails(test: &mut Test) -> Result<()> {
     Ok(())
 }
 
+/// A versioned update through the unique-index path preserves its condition
+/// failure when the row has been deleted.
+#[driver_test(scenario(crate::scenarios::versioned_user_unique_email))]
+pub async fn unique_index_update_after_delete_fails(test: &mut Test) -> Result<()> {
+    let mut db = setup(test).await;
+
+    let mut user = toasty::create!(User {
+        email: "deleted@example.com"
+    })
+    .exec(&mut db)
+    .await?;
+
+    User::filter_by_id(user.id).delete().exec(&mut db).await?;
+
+    let result: Result<()> = user
+        .update()
+        .email("updated@example.com")
+        .exec(&mut db)
+        .await;
+    let err = assert_err!(result);
+    if test.capability().sql {
+        assert!(
+            err.is_record_not_found(),
+            "expected record_not_found, got {err:?}"
+        );
+    } else {
+        assert!(
+            err.is_condition_failed(),
+            "expected condition_failed, got {err:?}"
+        );
+    }
+
+    Ok(())
+}
+
 /// The query-based counterpart to `relative_update_increments_value_and_version`:
 /// a relative assignment (`value += 1`) on a versioned model through a
 /// query-rooted update.
@@ -392,7 +427,8 @@ pub async fn delete_checks_version(test: &mut Test) -> Result<()> {
 }
 
 /// An instance update whose row has been deleted fails instead of silently
-/// succeeding. SQL backends raise `record_not_found`.
+/// succeeding. SQL backends raise `record_not_found`; DynamoDB preserves the
+/// version condition failure.
 #[driver_test(scenario(crate::scenarios::versioned_item))]
 pub async fn update_after_delete_fails(test: &mut Test) -> Result<()> {
     let mut db = setup(test).await;
@@ -410,6 +446,11 @@ pub async fn update_after_delete_fails(test: &mut Test) -> Result<()> {
         assert!(
             err.is_record_not_found(),
             "expected record_not_found, got {err:?}"
+        );
+    } else {
+        assert!(
+            err.is_condition_failed(),
+            "expected condition_failed, got {err:?}"
         );
     }
 
@@ -441,6 +482,11 @@ pub async fn relative_update_after_delete_fails(test: &mut Test) -> Result<()> {
         assert!(
             err.is_record_not_found(),
             "expected record_not_found, got {err:?}"
+        );
+    } else {
+        assert!(
+            err.is_condition_failed(),
+            "expected condition_failed, got {err:?}"
         );
     }
 
