@@ -130,18 +130,25 @@ impl<'a> MigrationStatement<'a> {
                     }
 
                     // Check if any column alteration requires table recreation
-                    // (e.g. SQLite can't alter column type/nullability/auto_increment)
+                    // (e.g. SQLite can't alter column type/nullability/auto_increment
+                    // or primary key membership)
                     let needs_recreation = !capability.schema_mutations.alter_column_type
-                        && columns.iter().any(|item| {
-                            matches!(
-                                item,
-                                diff::Column::Alter {
-                                    previous: prev_col,
-                                    next: next_col
-                                } if AlterColumnChanges::from_diff(prev_col, next_col).has_type_change()
-                                    && !(capability.named_enum_types
-                                        && is_named_enum_variant_only_change(prev_col, next_col))
-                            )
+                        && columns.iter().any(|item| match item {
+                            diff::Column::Add(column) | diff::Column::Drop(column) => {
+                                column.primary_key
+                            }
+                            diff::Column::Alter {
+                                previous: prev_col,
+                                next: next_col,
+                            } => {
+                                prev_col.primary_key != next_col.primary_key
+                                    || (AlterColumnChanges::from_diff(prev_col, next_col)
+                                        .has_type_change()
+                                        && !(capability.named_enum_types
+                                            && is_named_enum_variant_only_change(
+                                                prev_col, next_col,
+                                            )))
+                            }
                         });
 
                     if needs_recreation {
@@ -153,34 +160,44 @@ impl<'a> MigrationStatement<'a> {
                             columns,
                             capability,
                         );
+
+                        // Dropping the old table also drops all of its indices. The
+                        // primary key is part of CREATE TABLE, so only recreate the
+                        // secondary indices from the new schema.
+                        for index in next.indices.iter().filter(|index| !index.primary_key) {
+                            result.push(Self::new(
+                                Statement::create_index(index),
+                                Cow::Borrowed(schema_diff.next()),
+                            ));
+                        }
                     } else {
                         Self::emit_column_changes(&mut result, schema, columns, capability);
-                    }
 
-                    // Indices diff
-                    for item in indices.iter() {
-                        match item {
-                            diff::Index::Create(index) => {
-                                result.push(Self::new(
-                                    Statement::create_index(index),
-                                    Cow::Borrowed(schema_diff.next()),
-                                ));
-                            }
-                            diff::Index::Drop(index) => {
-                                result.push(Self::new(
-                                    Statement::drop_index(index),
-                                    Cow::Borrowed(schema_diff.previous()),
-                                ));
-                            }
-                            diff::Index::Alter { previous, next } => {
-                                result.push(Self::new(
-                                    Statement::drop_index(previous),
-                                    Cow::Borrowed(schema_diff.previous()),
-                                ));
-                                result.push(Self::new(
-                                    Statement::create_index(next),
-                                    Cow::Borrowed(schema_diff.next()),
-                                ));
+                        // Indices diff
+                        for item in indices.iter() {
+                            match item {
+                                diff::Index::Create(index) => {
+                                    result.push(Self::new(
+                                        Statement::create_index(index),
+                                        Cow::Borrowed(schema_diff.next()),
+                                    ));
+                                }
+                                diff::Index::Drop(index) => {
+                                    result.push(Self::new(
+                                        Statement::drop_index(index),
+                                        Cow::Borrowed(schema_diff.previous()),
+                                    ));
+                                }
+                                diff::Index::Alter { previous, next } => {
+                                    result.push(Self::new(
+                                        Statement::drop_index(previous),
+                                        Cow::Borrowed(schema_diff.previous()),
+                                    ));
+                                    result.push(Self::new(
+                                        Statement::create_index(next),
+                                        Cow::Borrowed(schema_diff.next()),
+                                    ));
+                                }
                             }
                         }
                     }
