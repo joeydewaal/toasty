@@ -1,9 +1,24 @@
 use super::{
     Connection, Delete, ExprAttrs, Result, ReturnValuesOnConditionCheckFailure, SdkError,
-    TransactWriteItem, db, ddb_expression, ddb_key, item_to_record, operation,
+    TransactWriteItem, db, ddb_expression, ddb_key, filter_failed, operation, stmt,
 };
+use aws_sdk_dynamodb::types::AttributeValue;
 use std::collections::HashMap;
 use toasty_core::{driver::ExecResponse, stmt::ExprContext};
+
+fn on_delete_item_condition_failed(
+    item: Option<&HashMap<String, AttributeValue>>,
+    table: &db::Table,
+    filter: Option<&stmt::Expr>,
+) -> Result<ExecResponse> {
+    if filter_failed(item, table, filter)? {
+        Ok(ExecResponse::count(0))
+    } else {
+        Err(toasty_core::Error::condition_failed(
+            "DynamoDB conditional check failed",
+        ))
+    }
+}
 
 impl Connection {
     pub(crate) async fn exec_delete_by_key(
@@ -76,43 +91,7 @@ impl Connection {
 
             if let Err(SdkError::ServiceError(e)) = res {
                 if let DeleteItemError::ConditionalCheckFailedException(cce) = e.err() {
-                    if !has_condition {
-                        // Pure filter failure → count 0
-                        return Ok(ExecResponse::count(0));
-                    }
-
-                    if let Some(filter) = filter_expr {
-                        // Both filter and condition set — check if filter matched
-                        if let Some(old_item) = cce.item() {
-                            let record = item_to_record(old_item, table.columns.iter()).unwrap();
-                            use toasty_core::stmt;
-                            struct RecordInput<'a>(&'a stmt::ValueRecord);
-                            impl stmt::Input for RecordInput<'_> {
-                                fn resolve_ref(
-                                    &mut self,
-                                    expr_reference: &stmt::ExprReference,
-                                    projection: &stmt::Projection,
-                                ) -> Option<stmt::Expr> {
-                                    match expr_reference {
-                                        stmt::ExprReference::Column(col) => Some(
-                                            self.0.fields[col.column].entry(projection).to_expr(),
-                                        ),
-                                        _ => None,
-                                    }
-                                }
-                            }
-                            if !filter.eval_bool(RecordInput(&record)).unwrap_or(false) {
-                                return Ok(ExecResponse::count(0));
-                            }
-                        } else {
-                            // Record gone — filter trivially didn't match
-                            return Ok(ExecResponse::count(0));
-                        }
-                    }
-
-                    return Err(toasty_core::Error::condition_failed(
-                        "DynamoDB conditional check failed",
-                    ));
+                    return on_delete_item_condition_failed(cce.item(), table, filter_expr);
                 }
 
                 return Err(toasty_core::Error::driver_operation_failed(
@@ -229,5 +208,60 @@ impl Connection {
         }
 
         Ok(ExecResponse::count(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_delete_item_condition_failed;
+    use crate::db;
+    use aws_sdk_dynamodb::types::AttributeValue;
+    use std::collections::HashMap;
+    use toasty_core::{
+        schema::db::{Column, ColumnId, IndexId, PrimaryKey, TableId, Type},
+        stmt::{self, Expr},
+    };
+
+    fn make_table() -> db::Table {
+        db::Table {
+            id: TableId(0),
+            name: "t".to_string(),
+            columns: vec![Column {
+                id: ColumnId {
+                    table: TableId(0),
+                    index: 0,
+                },
+                name: "status".to_string(),
+                ty: stmt::Type::String,
+                storage_ty: Type::Text,
+                nullable: false,
+                primary_key: false,
+                auto_increment: false,
+                versionable: false,
+            }],
+            primary_key: PrimaryKey {
+                columns: vec![],
+                index: IndexId {
+                    table: TableId(0),
+                    index: 0,
+                },
+            },
+            indices: vec![],
+        }
+    }
+
+    #[test]
+    fn invalid_filter_returns_error() {
+        let table = make_table();
+        let item = HashMap::from([(
+            "status".to_string(),
+            AttributeValue::S("inactive".to_string()),
+        )]);
+        let filter = Expr::from("not a bool");
+
+        let error =
+            on_delete_item_condition_failed(Some(&item), &table, Some(&filter)).unwrap_err();
+
+        assert!(error.is_expression_evaluation_failed());
     }
 }
