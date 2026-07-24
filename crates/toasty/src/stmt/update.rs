@@ -273,42 +273,6 @@ impl<T> Update<T> {
         Update::from_untyped(self.untyped)
     }
 
-    /// Return values from before the update.
-    ///
-    /// This preserves the result cardinality selected by `return_all()`,
-    /// `return_first()`, or `return_one()`.
-    pub fn returning_old(mut self) -> Self {
-        let returning = self
-            .untyped
-            .returning
-            .take()
-            .expect("returning_old() requires a model-returning update");
-        assert!(
-            returning.is_model(),
-            "returning_old() requires a model-returning update"
-        );
-        self.untyped.returning = Some(returning.into_old());
-        self
-    }
-
-    /// Return values from after the update explicitly.
-    ///
-    /// This preserves the result cardinality selected by `return_all()`,
-    /// `return_first()`, or `return_one()`.
-    pub fn returning_new(mut self) -> Self {
-        let returning = self
-            .untyped
-            .returning
-            .take()
-            .expect("returning_new() requires a model-returning update");
-        assert!(
-            returning.is_model(),
-            "returning_new() requires a model-returning update"
-        );
-        self.untyped.returning = Some(returning.into_new());
-        self
-    }
-
     /// Consume this typed update and return the untyped core statement.
     ///
     /// # Examples

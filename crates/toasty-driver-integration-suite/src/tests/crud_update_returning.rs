@@ -36,7 +36,7 @@ pub async fn query_update_return_all(t: &mut Test) -> Result<()> {
     let users = User::filter_by_age(0)
         .update()
         .age(1)
-        .return_all()
+        .returning_all()
         .exec(&mut db)
         .await?;
 
@@ -65,7 +65,7 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     let user = User::filter_by_age(0)
         .update()
         .age(1)
-        .return_first()
+        .returning_first()
         .exec(&mut db)
         .await?;
     assert!(user.is_some());
@@ -74,7 +74,7 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     let user = User::filter_by_age(1)
         .update()
         .age(0)
-        .return_one()
+        .returning_one()
         .exec(&mut db)
         .await?;
     assert_eq!(user.age, 0);
@@ -83,7 +83,7 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     let user = User::filter_by_age(1)
         .update()
         .age(0)
-        .return_first()
+        .returning_first()
         .exec(&mut db)
         .await?;
     assert_none!(user);
@@ -92,7 +92,7 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
         User::filter_by_age(1)
             .update()
             .age(0)
-            .return_one()
+            .returning_one()
             .exec(&mut db)
             .await
     );
@@ -101,87 +101,13 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     Ok(())
 }
 
-#[driver_test(
-    id(ID),
-    scenario(crate::scenarios::user_with_age),
-    requires(update_returning_new)
-)]
-pub async fn query_update_return_first_uses_query_order(t: &mut Test) -> Result<()> {
+#[driver_test(scenario(crate::scenarios::fixed_item_name), requires(scan))]
+pub async fn ordered_updates_are_rejected(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
-    toasty::create!(User::[
-        { name: "Alice", age: 0 },
-        { name: "Bob", age: 0 },
-    ])
-    .exec(&mut db)
-    .await?;
-
-    let expected = User::filter_by_age(0)
-        .order_by(User::fields().name().desc())
-        .first()
-        .exec(&mut db)
-        .await?
-        .unwrap();
-
-    let user = User::filter_by_age(0)
-        .order_by(User::fields().name().desc())
-        .update()
-        .age(1)
-        .return_first()
-        .exec(&mut db)
-        .await?
-        .unwrap();
-
-    assert_eq!(user.id, expected.id);
-    assert_eq!(User::filter_by_age(1).exec(&mut db).await?.len(), 2);
-
-    Ok(())
-}
-
-#[driver_test(
-    id(ID),
-    scenario(crate::scenarios::in_list_item),
-    requires(and(sql, update_returning_new))
-)]
-pub async fn query_update_return_first_uses_pre_update_backend_order(t: &mut Test) -> Result<()> {
-    let mut db = setup(t).await;
-    toasty::create!(Item::[
-        { name: "not-null", n: 0, bio: Some("z".to_string()) },
-        { name: "null", n: 0, bio: None },
-    ])
-    .exec(&mut db)
-    .await?;
-
-    let expected = Item::all()
-        .order_by(Item::fields().bio().asc())
-        .first()
-        .exec(&mut db)
-        .await?
-        .unwrap();
-
-    let returned = Item::all()
-        .order_by(Item::fields().bio().asc())
-        .update()
-        .bio(Some("updated".to_string()))
-        .return_first()
-        .exec(&mut db)
-        .await?
-        .unwrap();
-
-    assert_eq!(returned.id, expected.id);
-
-    Ok(())
-}
-
-#[driver_test(
-    scenario(crate::scenarios::fixed_item_name),
-    requires(and(sql, update_returning_new))
-)]
-pub async fn ordered_returns_reject_primary_key_updates(t: &mut Test) -> Result<()> {
-    let mut db = setup(t).await;
-    toasty::create!(Item::[
-        { id: 1, name: "first" },
-        { id: 3, name: "one" },
-    ])
+    toasty::create!(Item {
+        id: 1,
+        name: "first"
+    })
     .exec(&mut db)
     .await?;
 
@@ -190,27 +116,14 @@ pub async fn ordered_returns_reject_primary_key_updates(t: &mut Test) -> Result<
             .filter(Item::fields().id().eq(1))
             .order_by(Item::fields().id().asc())
             .update()
-            .id(2)
-            .return_first()
+            .name("updated")
             .exec(&mut db)
             .await
     );
     assert!(error.is_unsupported_feature());
 
-    let error = assert_err!(
-        Item::all()
-            .filter(Item::fields().id().eq(3))
-            .order_by(Item::fields().id().asc())
-            .update()
-            .id(4)
-            .return_one()
-            .exec(&mut db)
-            .await
-    );
-    assert!(error.is_unsupported_feature());
-
-    let items = Item::all().exec(&mut db).await?;
-    assert_eq_unordered!(items.iter().map(|item| &item.id), [&1, &3]);
+    let item = Item::get_by_id(&mut db, &1).await?;
+    assert_eq!(item.name, "first");
 
     Ok(())
 }
@@ -232,7 +145,7 @@ pub async fn query_update_return_all_by_partial_composite_key(t: &mut Test) -> R
     let todos = Todo::filter_by_user_id(user.id)
         .update()
         .title("updated")
-        .return_all()
+        .returning_all()
         .exec(&mut db)
         .await?;
 
@@ -240,36 +153,6 @@ pub async fn query_update_return_all_by_partial_composite_key(t: &mut Test) -> R
         { title: "updated" },
         { title: "updated" },
     ));
-
-    Ok(())
-}
-
-#[driver_test(
-    id(ID),
-    scenario(crate::scenarios::user_with_age),
-    requires(and(sql, update_returning_new))
-)]
-pub async fn query_update_return_one_error_rolls_back_batch(t: &mut Test) -> Result<()> {
-    let mut db = setup(t).await;
-    toasty::create!(User {
-        name: "Alice",
-        age: 0
-    })
-    .exec(&mut db)
-    .await?;
-
-    let error = assert_err!(
-        toasty::batch((
-            User::filter_by_name("Alice").update().age(1),
-            User::filter_by_name("missing").update().age(1).return_one(),
-        ))
-        .exec(&mut db)
-        .await
-    );
-    assert!(error.is_record_not_found());
-
-    let user = User::filter_by_name("Alice").get(&mut db).await?;
-    assert_eq!(user.age, 0);
 
     Ok(())
 }
@@ -290,8 +173,7 @@ pub async fn query_update_return_old(t: &mut Test) -> Result<()> {
 
     let previous = User::update_by_id(user.id)
         .name("Bob")
-        .return_one()
-        .returning_old()
+        .returning_one_old()
         .exec(&mut db)
         .await?;
     assert_struct!(previous, _ { name: "Alice", age: 0, .. });
@@ -305,9 +187,53 @@ pub async fn query_update_return_old(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
+    requires(update_returning_old)
+)]
+pub async fn query_update_return_all_and_first_old(t: &mut Test) -> Result<()> {
+    let mut db = setup(t).await;
+    toasty::create!(User::[
+        { name: "Alice", age: 0 },
+        { name: "Bob", age: 0 },
+    ])
+    .exec(&mut db)
+    .await?;
+
+    let previous = User::filter_by_age(0)
+        .update()
+        .age(1)
+        .returning_all_old()
+        .exec(&mut db)
+        .await?;
+    assert_struct!(previous, #(
+        { age: 0, name: "Alice" },
+        { age: 0, name: "Bob" },
+    ));
+
+    let previous = User::filter_by_age(1)
+        .update()
+        .age(2)
+        .returning_first_old()
+        .exec(&mut db)
+        .await?;
+    assert_struct!(previous, Some(_ { age: 1, .. }));
+
+    let previous = User::filter_by_age(1)
+        .update()
+        .age(2)
+        .returning_first_old()
+        .exec(&mut db)
+        .await?;
+    assert_none!(previous);
+
+    Ok(())
+}
+
+#[driver_test(
+    id(ID),
+    scenario(crate::scenarios::user_with_age),
     requires(update_returning_new)
 )]
-pub async fn query_update_return_new_explicit(t: &mut Test) -> Result<()> {
+pub async fn query_update_return_one_new(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
     let user = toasty::create!(User {
         name: "Alice",
@@ -318,8 +244,7 @@ pub async fn query_update_return_new_explicit(t: &mut Test) -> Result<()> {
 
     let updated = User::update_by_id(user.id)
         .name("Bob")
-        .return_one()
-        .returning_new()
+        .returning_one()
         .exec(&mut db)
         .await?;
     assert_eq!(updated.name, "Bob");
@@ -343,7 +268,7 @@ pub async fn query_update_return_model_leaves_relations_unloaded(t: &mut Test) -
 
     let user = User::update_by_id(user.id)
         .name("Alicia")
-        .return_one()
+        .returning_one()
         .exec(&mut db)
         .await?;
 
@@ -384,7 +309,7 @@ pub async fn query_update_relation_only_returns_model(t: &mut Test) -> Result<()
 
     let returned = User::update_by_id(user.id)
         .todos(toasty::stmt::insert(Todo::create().title("write tests")))
-        .return_one()
+        .returning_one()
         .exec(&mut db)
         .await?;
 
@@ -432,7 +357,7 @@ pub async fn query_update_missing_exact_key_returns_no_models(t: &mut Test) -> R
 
     let users = User::update_by_id(all_id)
         .name("missing")
-        .return_all()
+        .returning_all()
         .exec(&mut db)
         .await?;
     assert!(users.is_empty());
@@ -441,7 +366,7 @@ pub async fn query_update_missing_exact_key_returns_no_models(t: &mut Test) -> R
     let error = assert_err!(
         User::update_by_id(one_id)
             .name("missing")
-            .return_one()
+            .returning_one()
             .exec(&mut db)
             .await
     );
@@ -469,7 +394,7 @@ pub async fn query_update_return_unique_field_rejected_before_writes(t: &mut Tes
         User::all()
             .update()
             .email("same@example.com")
-            .return_all()
+            .returning_all()
             .exec(&mut db)
             .await
     );

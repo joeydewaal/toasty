@@ -196,11 +196,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         let returns_old = returning.as_ref().is_some_and(stmt::Returning::is_old);
         self.returns_old = returns_old;
         returning = returning.map(stmt::Returning::into_new);
-        let returning_rows = returning
-            .as_mut()
-            .map(stmt::Returning::take_rows)
-            .unwrap_or(stmt::ReturningRows::All);
-
         // For single VALUES queries (e.g., batch queries), the VALUES body is
         // the output expression. Extract it as a returning value so the planner
         // can wire up sub-statement dependencies. An empty VALUES body (e.g. an
@@ -278,7 +273,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         // Plans a NestedMerge if one is needed
         let output_node_id = self.plan_output_node(load_data_node_id, returning_info);
-        let output_node_id = self.plan_returning_rows(output_node_id, returning_rows);
 
         self.stmt_info.output.set(Some(output_node_id));
 
@@ -1944,53 +1938,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         }
 
         Ok(())
-    }
-
-    fn plan_returning_rows(
-        &mut self,
-        input: mir::NodeId,
-        rows: stmt::ReturningRows,
-    ) -> mir::NodeId {
-        let (selector, key, required) = match rows {
-            stmt::ReturningRows::All => return input,
-            stmt::ReturningRows::First { selector, key } => (selector, key, false),
-            stmt::ReturningRows::One { selector, key } => (selector, key, true),
-        };
-
-        let input_ty = self.planner.mir[input].ty().clone();
-        let stmt::Type::List(row_ty) = &input_ty else {
-            panic!("narrowed update returning must produce rows; ty={input_ty:#?}")
-        };
-        let row_ty = (**row_ty).clone();
-
-        let (selector, key) = if let Some(selector) = selector {
-            let stmt::Expr::Arg(selector) = selector else {
-                panic!("ordered update selector must be lowered to an argument")
-            };
-            let hir::Arg::Sub { stmt_id, .. } = &self.stmt_info.args[selector.position] else {
-                panic!("ordered update selector must reference a sub-statement")
-            };
-            let selector = self.planner.hir[stmt_id].output.get().unwrap();
-            let key = stmt::Expr::record(
-                key.into_iter()
-                    .map(|position| stmt::Expr::arg_project(0, [position])),
-            );
-
-            (
-                Some(selector),
-                Some(eval::Func::from_stmt(key, vec![row_ty.clone()])),
-            )
-        } else {
-            (None, None)
-        };
-
-        self.insert_mir_with_deps(mir::ReturnFirst {
-            input,
-            selector,
-            key,
-            required,
-            ty: input_ty,
-        })
     }
 
     fn plan_output_node(

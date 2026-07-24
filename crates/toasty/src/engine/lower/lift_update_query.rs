@@ -35,19 +35,12 @@ impl LiftUpdateQuery {
 impl VisitMut for LiftUpdateQuery {
     fn visit_stmt_update_mut(&mut self, stmt: &mut stmt::Update) {
         if let stmt::UpdateTarget::Query(query) = &mut stmt.target {
-            let selector = query
-                .order_by
-                .is_some()
-                .then(|| stmt::Expr::stmt((**query).clone()));
             let stmt::ExprSet::Select(select) = &mut query.body else {
                 todo!()
             };
 
             assert!(select.returning.is_model());
 
-            if let Some(returning) = &mut stmt.returning {
-                returning.set_selector(selector);
-            }
             stmt.filter.add_filter(select.filter.take());
             stmt.target = stmt::UpdateTarget::Model(select.source.model_id_unwrap());
         }

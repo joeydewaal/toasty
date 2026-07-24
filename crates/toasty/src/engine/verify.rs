@@ -250,29 +250,13 @@ impl stmt::Visit for Verify<'_, '_> {
         // Is not an empty update
         assert!(!i.assignments.is_empty(), "stmt = {i:#?}");
 
-        let model = self
-            .schema
-            .app
-            .model(i.target.model_id_unwrap())
-            .as_root_unwrap();
-
         if let stmt::UpdateTarget::Query(query) = &i.target
             && query.order_by.is_some()
-            && i.returning
-                .as_ref()
-                .is_some_and(returning_rows_are_narrowed)
-            && i.returning
-                .as_ref()
-                .is_some_and(|returning| !returning.is_old())
-            && model.primary_key.fields.iter().any(|field| {
-                i.assignments
-                    .keys()
-                    .any(|projection| projection.as_slice().first() == Some(&field.index))
-            })
         {
             self.record(Error::unsupported_feature(
-                "ordered update returns cannot update primary-key fields",
+                "ordered updates are not supported",
             ));
+            return;
         }
 
         if let Some(returning) = i
@@ -292,9 +276,15 @@ impl stmt::Visit for Verify<'_, '_> {
                     "{} does not support returning {version} models from updates",
                     self.capability.driver_name
                 )));
+                return;
             }
 
             if !self.capability.update_returning_unique {
+                let model = self
+                    .schema
+                    .app
+                    .model(i.target.model_id_unwrap())
+                    .as_root_unwrap();
                 let assigns_unique = model
                     .indices
                     .iter()
@@ -323,14 +313,6 @@ impl stmt::Visit for Verify<'_, '_> {
         };
 
         verify_expr.visit_stmt_update(i);
-    }
-}
-
-fn returning_rows_are_narrowed(returning: &stmt::Returning) -> bool {
-    match returning {
-        stmt::Returning::First { .. } | stmt::Returning::One { .. } => true,
-        stmt::Returning::Old(returning) => returning_rows_are_narrowed(returning),
-        _ => false,
     }
 }
 

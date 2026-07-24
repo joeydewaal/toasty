@@ -437,9 +437,6 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
                 if single { ty } else { Type::list(ty) }
             }
             Returning::Expr(expr) => self.infer_expr_ty2(&arg_ty_stack, expr, true),
-            Returning::First { returning, .. } | Returning::One { returning, .. } => {
-                self.infer_returning_ty(returning, args, single)
-            }
             Returning::Old(returning) => self.infer_returning_ty(returning, args, single),
         }
     }

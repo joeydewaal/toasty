@@ -1443,21 +1443,6 @@ where
         Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr_mut(expr),
         Returning::Expr(expr) => v.visit_expr_mut(expr),
-        Returning::First {
-            returning,
-            selector,
-            ..
-        }
-        | Returning::One {
-            returning,
-            selector,
-            ..
-        } => {
-            if let Some(selector) = selector {
-                v.visit_expr_mut(selector);
-            }
-            v.visit_returning_mut(returning);
-        }
         Returning::Old(returning) => v.visit_returning_mut(returning),
     }
 }

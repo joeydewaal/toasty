@@ -43,9 +43,6 @@ pub(crate) use query_pk::QueryPk;
 mod read_modify_write;
 pub(crate) use read_modify_write::ReadModifyWrite;
 
-mod return_first;
-pub(crate) use return_first::ReturnFirst;
-
 mod scan;
 pub(crate) use scan::Scan;
 

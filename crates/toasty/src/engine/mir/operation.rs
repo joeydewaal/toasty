@@ -6,7 +6,7 @@ use crate::engine::mir::Eval;
 
 use super::{
     Const, DeleteByKey, ExecStatement, Filter, FindPkByIndex, GetByKey, Guard, NestedMerge, Node,
-    Project, QueryPk, ReadModifyWrite, ReturnFirst, Scan, UpdateByKey, Upsert,
+    Project, QueryPk, ReadModifyWrite, Scan, UpdateByKey, Upsert,
 };
 
 /// A step in the query execution plan.
@@ -47,9 +47,6 @@ pub(crate) enum Operation {
     /// modified.
     ReadModifyWrite(Box<ReadModifyWrite>),
 
-    /// Narrow mutation results to the first ordered row.
-    ReturnFirst(ReturnFirst),
-
     QueryPk(QueryPk),
 
     /// Full-table scan — emitted when no index covers the filter on a scan-capable driver.
@@ -81,11 +78,6 @@ impl From<Operation> for Node {
             Operation::NestedMerge(m) => m.inputs.clone(),
             Operation::Project(m) => indexset![m.input],
             Operation::ReadModifyWrite(m) => m.inputs.clone(),
-            Operation::ReturnFirst(m) => {
-                let mut deps = indexset![m.input];
-                deps.extend(m.selector);
-                deps
-            }
             Operation::QueryPk(m) => m.input.into_iter().collect(),
             Operation::Scan(m) => m.input.into_iter().collect(),
             Operation::UpdateByKey(m) => indexset![m.input],
