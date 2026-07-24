@@ -47,27 +47,6 @@ enum SqlReturn {
     Types(Vec<stmt::Type>),
 }
 
-fn returns_old(stmt: &stmt::Statement) -> bool {
-    struct FindOld(bool);
-
-    impl stmt::Visit for FindOld {
-        fn visit_stmt_update(&mut self, update: &stmt::Update) {
-            if update
-                .returning
-                .as_ref()
-                .is_some_and(stmt::Returning::is_old)
-            {
-                self.0 = true;
-            }
-            stmt::visit::visit_stmt_update(self, update);
-        }
-    }
-
-    let mut find = FindOld(false);
-    stmt::Visit::visit(&mut find, stmt);
-    find.0
-}
-
 use crate::{oid_cache::OidCache, statement_cache::StatementCache};
 
 /// Classifies a `tokio_postgres::Error` into a Toasty error.
@@ -346,7 +325,6 @@ pub struct Connection {
     statement_cache: StatementCache,
     oid_cache: OidCache,
     query_log: QueryLogConfig,
-    server_version_num: Option<u32>,
 }
 
 impl Connection {
@@ -357,35 +335,7 @@ impl Connection {
             statement_cache: StatementCache::new(100),
             oid_cache: OidCache::new(),
             query_log: QueryLogConfig::default(),
-            server_version_num: None,
         }
-    }
-
-    async fn ensure_old_update_returning(&mut self) -> Result<()> {
-        let server_version_num = match self.server_version_num {
-            Some(version) => version,
-            None => {
-                let row = self
-                    .client
-                    .query_one("SHOW server_version_num", &[])
-                    .await
-                    .map_err(classify_pg_error)?;
-                let version = row
-                    .get::<_, &str>(0)
-                    .parse::<u32>()
-                    .map_err(toasty_core::Error::driver_operation_failed)?;
-                self.server_version_num = Some(version);
-                version
-            }
-        };
-
-        if server_version_num < 180_000 {
-            return Err(toasty_core::Error::unsupported_feature(
-                "returning old models from updates requires PostgreSQL 18 or newer",
-            ));
-        }
-
-        Ok(())
     }
 
     /// Connects to a PostgreSQL database using a [`postgres::Config`].
@@ -568,9 +518,6 @@ impl toasty_core::driver::Connection for Connection {
                     query.last_insert_id_hack.is_none(),
                     "last_insert_id_hack is MySQL-specific and should not be set for PostgreSQL"
                 );
-                if returns_old(&query.stmt) {
-                    self.ensure_old_update_returning().await?;
-                }
                 (sql::Statement::from(query.stmt), query.params, query.ret)
             }
             Operation::RawSql(op) => {
