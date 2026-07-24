@@ -52,7 +52,11 @@ fn returns_old(stmt: &stmt::Statement) -> bool {
 
     impl stmt::Visit for FindOld {
         fn visit_stmt_update(&mut self, update: &stmt::Update) {
-            if update.returning_old {
+            if update
+                .returning
+                .as_ref()
+                .is_some_and(stmt::Returning::is_old)
+            {
                 self.0 = true;
             }
             stmt::visit::visit_stmt_update(self, update);

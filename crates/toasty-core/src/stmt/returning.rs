@@ -35,7 +35,12 @@ pub enum Returning {
     Count,
 
     /// Return the result of evaluating an expression against the source rows.
-    Project(Expr),
+    Project {
+        /// Expression evaluated against the returned row.
+        expr: Expr,
+        /// Whether the projection reads pre-update values.
+        old: bool,
+    },
 
     /// Return a fixed expression, independent of the statement source.
     Expr(Expr),
@@ -48,7 +53,10 @@ impl Returning {
     where
         T: Into<Expr>,
     {
-        Returning::Project(Expr::record(items))
+        Returning::Project {
+            expr: Expr::record(items),
+            old: false,
+        }
     }
 
     /// Returns `true` if this is the `Model` variant.
@@ -90,21 +98,24 @@ impl Returning {
 
     /// Returns `true` if this is the `Project` variant.
     pub fn is_project(&self) -> bool {
-        matches!(self, Self::Project(_))
+        matches!(self, Self::Project { .. })
     }
 
     /// Returns a reference to the inner expression if this is the `Project`
     /// variant.
     pub fn as_project(&self) -> Option<&Expr> {
         match self {
-            Self::Project(expr) => Some(expr),
+            Self::Project { expr, .. } => Some(expr),
             _ => None,
         }
     }
 
     /// Returns `true` when this clause requests a pre-mutation model.
     pub fn is_old(&self) -> bool {
-        matches!(self, Self::Model { old: true, .. })
+        matches!(
+            self,
+            Self::Model { old: true, .. } | Self::Project { old: true, .. }
+        )
     }
 
     /// Returns a reference to the inner expression.
@@ -122,7 +133,7 @@ impl Returning {
     /// `Project` variant.
     pub fn as_project_mut(&mut self) -> Option<&mut Expr> {
         match self {
-            Self::Project(expr) => Some(expr),
+            Self::Project { expr, .. } => Some(expr),
             _ => None,
         }
     }
@@ -143,7 +154,11 @@ impl Returning {
     /// Replaces this returning clause with `Returning::Project` containing the
     /// given expression.
     pub fn set_project(&mut self, expr: impl Into<Expr>) {
-        *self = Returning::Project(expr.into());
+        let old = self.is_old();
+        *self = Returning::Project {
+            expr: expr.into(),
+            old,
+        };
     }
 
     /// Returns `true` if this is the `Expr` variant.
@@ -151,10 +166,16 @@ impl Returning {
         matches!(self, Self::Expr(..))
     }
 
-    /// Takes this returning clause, replacing it with `Returning::Project(null)`,
-    /// and returns the original value.
+    /// Takes this returning clause, replaces it with a null projection, and
+    /// returns the original value.
     pub fn take(&mut self) -> Returning {
-        std::mem::replace(self, Returning::Project(stmt::Expr::null()))
+        std::mem::replace(
+            self,
+            Returning::Project {
+                expr: stmt::Expr::null(),
+                old: false,
+            },
+        )
     }
 }
 
@@ -199,7 +220,10 @@ impl Statement {
     /// Set the `Returning` clause to `Returning::Project` containing the given
     /// expression.
     pub fn set_returning_project(&mut self, expr: impl Into<Expr>) {
-        self.set_returning(Returning::Project(expr.into()));
+        self.set_returning(Returning::Project {
+            expr: expr.into(),
+            old: false,
+        });
     }
 
     /// Set the `Returning` clause to `Returning::Expr` containing the given

@@ -1441,7 +1441,7 @@ where
             }
         }
         Returning::Changed | Returning::Count => {}
-        Returning::Project(expr) => v.visit_expr_mut(expr),
+        Returning::Project { expr, .. } => v.visit_expr_mut(expr),
         Returning::Expr(expr) => v.visit_expr_mut(expr),
     }
 }

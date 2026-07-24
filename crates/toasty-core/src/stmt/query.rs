@@ -154,7 +154,6 @@ impl Query {
             filter: Filter::default(),
             condition: stmt::Condition::default(),
             returning: None,
-            returning_old: false,
         }
     }
 
@@ -315,7 +314,10 @@ impl QueryBuilder {
     /// Sets the returning clause to `Returning::Project` containing the given
     /// expression.
     pub fn returning_project(self, expr: impl Into<Expr>) -> Self {
-        self.returning(Returning::Project(expr.into()))
+        self.returning(Returning::Project {
+            expr: expr.into(),
+            old: false,
+        })
     }
 
     /// Sets the returning clause to `Returning::Expr` containing the given

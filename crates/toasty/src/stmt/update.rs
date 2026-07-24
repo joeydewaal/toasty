@@ -351,7 +351,6 @@ impl<M: Model> Default for Update<M> {
                 filter: stmt::Filter::new(stmt::Expr::from(false)),
                 condition: stmt::Condition::default(),
                 returning: Some(stmt::Returning::Changed),
-                returning_old: false,
             },
             _p: PhantomData,
         }

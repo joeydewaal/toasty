@@ -92,8 +92,10 @@ impl<'a> RewriteVia<'a> {
                 model.id = target;
             }
             if let Some((target, terminal)) = scalar_terminal {
-                select.returning =
-                    stmt::Returning::Project(stmt::Path::field(target, terminal).into_stmt());
+                select.returning = stmt::Returning::Project {
+                    expr: stmt::Path::field(target, terminal).into_stmt(),
+                    old: false,
+                };
             }
 
             // Create a new scope to indicate we are operating in the
@@ -214,7 +216,10 @@ impl<'a> RewriteVia<'a> {
         let returning = super::key_field_refs(0, rel.foreign_key.fields.iter().map(|fk| fk.source));
 
         let mut source = *association.source;
-        source.body.as_select_mut_unwrap().returning = stmt::Returning::Project(returning);
+        source.body.as_select_mut_unwrap().returning = stmt::Returning::Project {
+            expr: returning,
+            old: false,
+        };
 
         stmt::Expr::in_subquery(target, source).into()
     }

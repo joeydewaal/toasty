@@ -95,7 +95,10 @@ fn select_with_join(constraint: JoinOp) -> stmt::Statement {
     });
 
     let select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0)])),
+        returning: Returning::Project {
+            expr: Expr::record([col(0, 0)]),
+            old: false,
+        },
         source,
         filter: Filter::ALL,
         distinct: false,
@@ -163,7 +166,10 @@ fn multi_step_left_join_chain() {
     });
 
     let select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0), col(1, 0), col(2, 0)])),
+        returning: Returning::Project {
+            expr: Expr::record([col(0, 0), col(1, 0), col(2, 0)]),
+            old: false,
+        },
         source,
         filter: Filter::ALL,
         distinct: false,
@@ -206,7 +212,10 @@ fn mixed_inner_then_left_join() {
     });
 
     let select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0)])),
+        returning: Returning::Project {
+            expr: Expr::record([col(0, 0)]),
+            old: false,
+        },
         source,
         filter: Filter::ALL,
         distinct: false,

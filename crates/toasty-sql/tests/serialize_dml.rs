@@ -141,7 +141,6 @@ fn update_stmt(with_where: bool, returning: Option<Returning>) -> stmt::Statemen
         filter,
         condition: stmt::Condition::default(),
         returning,
-        returning_old: false,
     }
     .into()
 }
@@ -190,7 +189,10 @@ fn insert_basic_values() {
 #[test]
 fn insert_with_returning() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     expect![[r#"INSERT INTO "users" ("id", "name") VALUES (1, 'a') RETURNING "id" AS column1;"#]]
         .assert_eq(&render(
             Flavor::Sqlite,
@@ -209,7 +211,10 @@ fn insert_with_returning() {
 #[should_panic(expected = "MySQL does not support the RETURNING clause with INSERT")]
 fn insert_returning_panics_on_mysql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     render(Flavor::Mysql, &schema, insert_basic(returning));
 }
 
@@ -260,7 +265,10 @@ fn update_with_where() {
 #[test]
 fn update_with_returning() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     expect![[
         r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING "id" AS column1;"#
     ]]
@@ -282,12 +290,11 @@ fn update_with_returning() {
 #[test]
 fn update_with_returning_old_postgresql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0), col(0, 1)])));
-    let mut update = update_stmt(true, returning);
-    let stmt::Statement::Update(update_stmt) = &mut update else {
-        unreachable!()
-    };
-    update_stmt.returning_old = true;
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0), col(0, 1)]),
+        old: true,
+    });
+    let update = update_stmt(true, returning);
     expect![[
         r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING old."id" AS column1, old."name" AS column2;"#
     ]]
@@ -302,7 +309,10 @@ fn update_with_returning_old_postgresql() {
 #[should_panic(expected = "MySQL does not support the RETURNING clause with UPDATE")]
 fn update_returning_panics_on_mysql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     render(Flavor::Mysql, &schema, update_stmt(true, returning));
 }
 
@@ -362,7 +372,10 @@ fn delete_with_where() {
 #[should_panic(expected = "self.returning.is_none()")]
 fn delete_with_returning_panics_on_mysql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     render(Flavor::Mysql, &schema, delete_stmt(true, returning));
 }
 
@@ -377,7 +390,10 @@ fn delete_with_returning_panics_on_mysql() {
 #[test]
 fn delete_with_returning_postgresql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     // Expected string stays empty — will be populated when the serializer
     // learns to emit DELETE+RETURNING.
     expect![[r#""#]].assert_eq(&render(
@@ -391,7 +407,10 @@ fn delete_with_returning_postgresql() {
 #[test]
 fn delete_with_returning_sqlite() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0)])));
+    let returning = Some(Returning::Project {
+        expr: Expr::record([col(0, 0)]),
+        old: false,
+    });
     // Expected string stays empty — will be populated when the serializer
     // learns to emit DELETE+RETURNING.
     expect![[r#""#]].assert_eq(&render(

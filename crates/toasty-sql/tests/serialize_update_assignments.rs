@@ -114,7 +114,6 @@ fn update_with(assignments: Assignments) -> stmt::Statement {
         filter: Filter::ALL,
         condition: stmt::Condition::default(),
         returning: None,
-        returning_old: false,
     }
     .into()
 }

@@ -121,7 +121,7 @@ impl LowerStatement<'_, '_> {
     ///    - For each INSERT row, evaluate the RETURNING projection
     ///    - This produces a `stmt::Value` for each row
     ///
-    /// 3. **Replace** `stmt::Returning::Project(projection)` with
+    /// 3. **Replace** the `stmt::Returning::Project` expression with
     ///    `stmt::Returning::Expr(values)`
     ///    - Single-row inserts return a single value
     ///    - Multi-row inserts return a list of values
@@ -143,7 +143,7 @@ impl LowerStatement<'_, '_> {
         source: &stmt::Query,
     ) {
         match returning {
-            stmt::Returning::Project(project) => {
+            stmt::Returning::Project { expr: project, .. } => {
                 if let Some(xformed_returning) =
                     self.constantize_insert_returning_projection(project, source)
                 {
@@ -360,9 +360,8 @@ pub(super) fn constantize_update_returning(
     cx: stmt::ExprContext<'_>,
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
-    returning_old: bool,
 ) {
-    if returning_old {
+    if returning.is_old() {
         return;
     }
 

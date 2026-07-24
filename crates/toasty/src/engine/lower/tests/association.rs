@@ -222,7 +222,7 @@ fn multi_step_via_unfolds_into_nested_in_subqueries() {
         stmt::Source::Model(SourceModel { id, via: None }) if *id == s.post_model
     ));
 
-    let Returning::Project(project) = &post_select.returning else {
+    let Returning::Project { expr: project, .. } = &post_select.returning else {
         panic!("expected post subquery to project its returning");
     };
     assert!(matches!(

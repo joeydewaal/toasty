@@ -1037,6 +1037,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
+        let old = i.is_old();
         let load_implicit_relations = matches!(i, stmt::Returning::Model { .. })
             && !matches!(self.cx, LoweringContext::Update);
         if let stmt::Returning::Model { include, .. } = i {
@@ -1058,7 +1059,10 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             }
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
-            *i = stmt::Returning::Project(returning);
+            *i = stmt::Returning::Project {
+                expr: returning,
+                old,
+            };
         }
 
         // For multi-row INSERT returning, visit each row with its row index so
@@ -1212,8 +1216,6 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
         let mut lower = self.scope_expr(&stmt.target);
         lower.cx = LoweringContext::Update;
 
-        stmt.returning_old = stmt.returning.as_ref().is_some_and(stmt::Returning::is_old);
-
         let mut returning_changed = false;
 
         // Before lowering children, convert the "Changed" returning statement
@@ -1236,12 +1238,10 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
 
                 // Step 2 — build the returning expression.
-                *returning = stmt::Returning::Project(build_update_returning(
-                    model.id,
-                    None,
-                    &mapping.fields,
-                    &changed_bits,
-                ));
+                *returning = stmt::Returning::Project {
+                    expr: build_update_returning(model.id, None, &mapping.fields, &changed_bits),
+                    old: false,
+                };
             }
         }
 
@@ -1279,12 +1279,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
         if let Some(returning) = &mut stmt.returning {
             lower.visit_returning_mut(returning);
             // Use the lowered assignments (which are now column-indexed)
-            returning::constantize_update_returning(
-                lower.expr_cx,
-                returning,
-                &stmt.assignments,
-                stmt.returning_old,
-            );
+            returning::constantize_update_returning(lower.expr_cx, returning, &stmt.assignments);
         }
 
         self.visit_update_target_mut(&mut stmt.target);
