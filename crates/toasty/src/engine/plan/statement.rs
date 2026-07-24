@@ -822,6 +822,35 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         let returns_count = returning.as_ref().is_some_and(stmt::Returning::is_count);
 
+        if !self.planner.engine.capability().sql
+            && !self.load_data.select_items.is_empty()
+            && let stmt::Statement::Update(update) = &stmt
+        {
+            let table = self
+                .planner
+                .engine
+                .schema
+                .db
+                .table(update.target.as_table_unwrap());
+            let assigns_unique = table
+                .indices
+                .iter()
+                .filter(|index| index.unique && !index.primary_key)
+                .flat_map(|index| &index.columns)
+                .any(|index_column| {
+                    update.assignments.keys().any(|projection| {
+                        projection.as_slice().first() == Some(&index_column.column.index)
+                    })
+                });
+
+            if assigns_unique {
+                return Err(toasty_core::Error::unsupported_feature(format!(
+                    "{} cannot return models from updates that change a unique secondary-index field",
+                    self.planner.engine.capability().driver_name
+                )));
+            }
+        }
+
         // COUNT(*) is SQL-only
         if self.load_data.select_items.contains(&SelectItem::CountStar)
             && !self.planner.engine.capability().sql

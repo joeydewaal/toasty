@@ -146,6 +146,12 @@ impl Connection {
             })
             .collect::<Vec<_>>();
 
+        if op.returning.is_some() && !unique_indices.is_empty() {
+            return Err(toasty_core::Error::unsupported_feature(
+                "DynamoDB cannot return models from updates that require TransactWriteItems",
+            ));
+        }
+
         let filter_expression = match (&op.filter, &op.condition) {
             (Some(filter), None) => Some(ddb_expression(&cx, &mut expr_attrs, false, filter)),
             (None, Some(condition)) => Some(ddb_expression(&cx, &mut expr_attrs, false, condition)),

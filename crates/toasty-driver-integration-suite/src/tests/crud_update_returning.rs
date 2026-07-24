@@ -379,7 +379,7 @@ pub async fn query_update_missing_exact_key_returns_no_models(t: &mut Test) -> R
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_unique_email_with_name),
-    requires(and(update_returning_new, not(update_returning_unique)))
+    requires(and(update_returning_new, not(sql)))
 )]
 pub async fn query_update_return_unique_field_rejected_before_writes(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -405,6 +405,27 @@ pub async fn query_update_return_unique_field_rejected_before_writes(t: &mut Tes
         { email: "same@example.com", name: "Alice" },
         { email: "other@example.com", name: "Bob" },
     ));
+
+    Ok(())
+}
+
+#[driver_test(
+    id(ID),
+    scenario(crate::scenarios::user_unique_email_with_name),
+    requires(and(update_returning_new, not(sql)))
+)]
+pub async fn query_update_return_unique_field_rejected_without_matches(t: &mut Test) -> Result<()> {
+    let mut db = setup(t).await;
+
+    let error = assert_err!(
+        User::filter_by_email("missing@example.com")
+            .update()
+            .email("new@example.com")
+            .returning_all()
+            .exec(&mut db)
+            .await
+    );
+    assert!(error.is_unsupported_feature());
 
     Ok(())
 }

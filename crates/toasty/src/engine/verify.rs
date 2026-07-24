@@ -276,31 +276,6 @@ impl stmt::Visit for Verify<'_, '_> {
                     )));
                     return;
                 }
-
-                if !self.capability.update_returning_unique {
-                    let model = self
-                        .schema
-                        .app
-                        .model(i.target.model_id_unwrap())
-                        .as_root_unwrap();
-                    let assigns_unique = model
-                        .indices
-                        .iter()
-                        .filter(|index| index.unique && !index.primary_key)
-                        .flat_map(|index| &index.fields)
-                        .any(|index_field| {
-                            i.assignments.keys().any(|projection| {
-                                projection.as_slice().first() == Some(&index_field.field.index)
-                            })
-                        });
-
-                    if assigns_unique {
-                        self.record(Error::unsupported_feature(format!(
-                            "{} cannot return models while updating a unique secondary-index field",
-                            self.capability.driver_name
-                        )));
-                    }
-                }
             }
         }
 
@@ -884,33 +859,6 @@ mod tests {
             )
             .is_ok()
         );
-    }
-
-    #[test]
-    fn update_returning_unique_assignment_rejected_on_dynamodb() {
-        #[derive(Debug, toasty::Model)]
-        struct User {
-            #[key]
-            id: uuid::Uuid,
-
-            #[unique]
-            email: String,
-        }
-
-        let schema = test_schema_with(&[User::schema()]);
-        let mut assignments = Assignments::default();
-        assignments.set(1usize, "new@example.com");
-        let stmt = Update {
-            target: UpdateTarget::Model(User::id()),
-            assignments,
-            filter: Filter::ALL,
-            condition: Condition::default(),
-            returning: Some(Returning::ModelUnloaded { include: vec![] }),
-        };
-
-        let error = verify_with_schema(&schema, &Capability::DYNAMODB, stmt.into())
-            .expect_err("expected unsupported_feature error");
-        assert!(error.is_unsupported_feature());
     }
 
     #[test]

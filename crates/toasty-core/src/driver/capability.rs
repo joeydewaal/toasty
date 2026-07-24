@@ -61,12 +61,6 @@ pub struct Capability {
     /// Whether updates can return complete pre-update models.
     pub update_returning_old: bool,
 
-    /// Whether model-returning updates may assign managed unique-index fields.
-    ///
-    /// Drivers that maintain uniqueness through auxiliary writes must reject
-    /// this combination before executing any part of a multi-row update.
-    pub update_returning_unique: bool,
-
     /// Whether an upsert may target the table's primary key.
     ///
     /// When `false`, the verifier returns `unsupported_feature` before
@@ -594,7 +588,6 @@ impl Capability {
         native_sql_returning: true,
         update_returning_new: true,
         update_returning_old: false,
-        update_returning_unique: true,
         upsert_primary_key: true,
         upsert_unique: true,
         upsert_branch_assignments: true,
@@ -831,7 +824,6 @@ impl Capability {
         native_sql_returning: false,
         update_returning_new: true,
         update_returning_old: true,
-        update_returning_unique: false,
         upsert_primary_key: true,
         upsert_unique: false,
         upsert_branch_assignments: false,
