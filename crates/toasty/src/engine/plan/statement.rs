@@ -90,6 +90,7 @@
 use std::mem;
 
 use indexmap::{IndexMap, IndexSet};
+use toasty_core::schema::db;
 use toasty_core::stmt::{self, visit_mut};
 
 use toasty_core::driver::operation::Pagination;
@@ -2123,9 +2124,10 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         stmt::Type::list(self.planner.engine.index_key_record_ty(index_plan.index))
     }
 
-    fn table_primary_key_ty(&self, table: toasty_core::schema::db::TableId) -> stmt::Type {
+    fn table_primary_key_ty(&self, table: db::TableId) -> stmt::Type {
         let table = self.planner.engine.schema.db.table(table);
         let primary_key = self.planner.engine.schema.db.index(table.primary_key.index);
+
         stmt::Type::list(self.planner.engine.index_key_record_ty(primary_key))
     }
 

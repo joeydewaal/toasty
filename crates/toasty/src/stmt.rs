@@ -13,6 +13,9 @@ pub use delete::Delete;
 mod expr;
 pub use expr::Expr;
 
+mod include;
+pub use include::Include;
+
 mod insert;
 pub use insert::Insert;
 
@@ -56,6 +59,12 @@ use crate::{Executor, schema::Load};
 
 mod query;
 pub use query::Query;
+
+mod relation_insert;
+pub use relation_insert::RelationInsert;
+
+mod relation_remove;
+pub use relation_remove::RelationRemove;
 
 mod scope;
 pub use scope::IntoScope;

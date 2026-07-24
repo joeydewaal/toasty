@@ -1,4 +1,6 @@
-use super::{Delete, Expr, IntoExpr, IntoStatement, List, Statement, Value};
+use super::{
+    Delete, Expr, IntoExpr, IntoStatement, List, RelationInsert, RelationRemove, Statement, Value,
+};
 use crate::{
     Executor, Result,
     schema::{Load, Model},
@@ -187,8 +189,8 @@ impl<T> Query<T> {
     /// // Include the field at index 1 (name)
     /// let q = Query::<List<User>>::all().include(User::path_field::<String>(1));
     /// ```
-    pub fn include(mut self, path: impl Into<stmt::Path>) -> Self {
-        self.untyped.include(path.into());
+    pub fn include(mut self, include: impl Into<stmt::Include>) -> Self {
+        self.untyped.include(include.into());
         self
     }
 
@@ -437,6 +439,26 @@ impl<T> Query<List<T>> {
         Query {
             untyped: self.untyped,
             _p: PhantomData,
+        }
+    }
+}
+
+impl<T: Model> Query<List<T>> {
+    /// Convert this query into a [`RelationInsert`] statement that inserts `item` into the
+    /// relation that produced this list query.
+    pub fn insert(self, item: impl IntoExpr<T>) -> RelationInsert<T> {
+        RelationInsert {
+            query: self,
+            item: item.into_expr(),
+        }
+    }
+
+    /// Convert this query into a [`RelationRemove`] statement that removes `item` from the
+    /// relation that produced this list query.
+    pub fn remove(self, item: impl IntoExpr<T>) -> RelationRemove<T> {
+        RelationRemove {
+            query: self,
+            item: item.into_expr(),
         }
     }
 }
