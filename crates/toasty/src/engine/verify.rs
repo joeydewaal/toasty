@@ -259,48 +259,47 @@ impl stmt::Visit for Verify<'_, '_> {
             return;
         }
 
-        if let Some(returning) = i
-            .returning
-            .as_ref()
-            .filter(|returning| returning.is_model())
-        {
-            let supported = if returning.is_old() {
-                self.capability.update_returning_old
-            } else {
-                self.capability.update_returning_new
-            };
-
-            if !supported {
-                let version = if returning.is_old() { "old" } else { "new" };
+        if let Some(returning) = &i.returning {
+            if returning.is_old() && !self.capability.update_returning_old {
                 self.record(Error::unsupported_feature(format!(
-                    "{} does not support returning {version} models from updates",
+                    "{} does not support returning old values from updates",
                     self.capability.driver_name
                 )));
                 return;
             }
 
-            if !self.capability.update_returning_unique {
-                let model = self
-                    .schema
-                    .app
-                    .model(i.target.model_id_unwrap())
-                    .as_root_unwrap();
-                let assigns_unique = model
-                    .indices
-                    .iter()
-                    .filter(|index| index.unique && !index.primary_key)
-                    .flat_map(|index| &index.fields)
-                    .any(|index_field| {
-                        i.assignments.keys().any(|projection| {
-                            projection.as_slice().first() == Some(&index_field.field.index)
-                        })
-                    });
-
-                if assigns_unique {
+            if returning.is_model() {
+                if !returning.is_old() && !self.capability.update_returning_new {
                     self.record(Error::unsupported_feature(format!(
-                        "{} cannot return models while updating a unique secondary-index field",
+                        "{} does not support returning new models from updates",
                         self.capability.driver_name
                     )));
+                    return;
+                }
+
+                if !self.capability.update_returning_unique {
+                    let model = self
+                        .schema
+                        .app
+                        .model(i.target.model_id_unwrap())
+                        .as_root_unwrap();
+                    let assigns_unique = model
+                        .indices
+                        .iter()
+                        .filter(|index| index.unique && !index.primary_key)
+                        .flat_map(|index| &index.fields)
+                        .any(|index_field| {
+                            i.assignments.keys().any(|projection| {
+                                projection.as_slice().first() == Some(&index_field.field.index)
+                            })
+                        });
+
+                    if assigns_unique {
+                        self.record(Error::unsupported_feature(format!(
+                            "{} cannot return models while updating a unique secondary-index field",
+                            self.capability.driver_name
+                        )));
+                    }
                 }
             }
         }
@@ -842,6 +841,19 @@ mod tests {
         let err =
             verify_with(&Capability::SQLITE, stmt).expect_err("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
+    }
+
+    #[test]
+    fn update_returning_old_project_rejected_when_unsupported() {
+        for capability in [&Capability::SQLITE, &Capability::MYSQL] {
+            let stmt = update_returning(
+                toasty_core::schema::app::ModelId(0),
+                Returning::Project(Expr::arg(0)).into_old(),
+            );
+            let err =
+                verify_with(capability, stmt).expect_err("expected unsupported_feature error");
+            assert!(err.is_unsupported_feature());
+        }
     }
 
     #[test]
