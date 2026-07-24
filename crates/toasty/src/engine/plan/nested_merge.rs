@@ -121,6 +121,22 @@ impl NestedMergePlanner<'_> {
 
         let ret = match stmt_state.stmt.as_deref().unwrap() {
             stmt::Statement::Query(query) => {
+                // Per-parent limit from `.include(...).limit(n)`. The HIR
+                // statement keeps the limit; only the batch-load clone has it
+                // stripped (see `rewrite_stmt_for_batch_load`).
+                // Cursor limits are pagination applied by the batched query
+                // itself, so they are not truncated per parent here.
+                let limit = match query.limit.as_ref() {
+                    Some(stmt::Limit::Offset(lo)) => {
+                        assert!(lo.offset.is_none(), "include limits do not support offset");
+                        Some(
+                            usize::try_from(super::statement::as_i64_literal(&lo.limit))
+                                .expect("include limit must be non-negative"),
+                        )
+                    }
+                    _ => None,
+                };
+
                 let filter_expr = self.build_filter_for_nested_child(stmt_id, selection, depth);
 
                 let filter_arg_tys = self.build_filter_arg_tys();
@@ -156,12 +172,14 @@ impl NestedMergePlanner<'_> {
                     level,
                     qualification,
                     single: query.single,
+                    limit,
                 }
             }
             stmt::Statement::Insert(insert) => NestedChild {
                 level,
                 qualification: MergeQualification::All,
                 single: insert.source.single,
+                limit: None,
             },
             stmt => todo!("stmt={stmt:#?}"),
         };
