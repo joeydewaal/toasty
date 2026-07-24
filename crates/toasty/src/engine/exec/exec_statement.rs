@@ -325,7 +325,7 @@ impl Exec<'_> {
         &self,
         stmt: &mut stmt::Statement,
     ) -> Option<MySQLUpdateReturning> {
-        if self.engine.capability().native_sql_returning || !self.engine.capability().sql {
+        if self.engine.capability().update_returning_new || !self.engine.capability().sql {
             return None;
         }
 
@@ -386,7 +386,7 @@ impl Exec<'_> {
         &self,
         stmt: &mut stmt::Statement,
     ) -> Option<MySQLInsertReturning> {
-        if !self.engine.capability().sql || self.engine.capability().native_sql_returning {
+        if !self.engine.capability().sql || self.engine.capability().update_returning_new {
             return None;
         }
 

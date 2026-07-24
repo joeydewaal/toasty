@@ -18,7 +18,7 @@ use crate::{schema::db, stmt};
 ///
 /// let cap = &Capability::SQLITE;
 /// assert!(cap.sql);
-/// assert!(cap.native_sql_returning);
+/// assert!(cap.update_returning_new);
 /// assert!(!cap.select_for_update);
 /// ```
 #[derive(Debug)]
@@ -51,9 +51,6 @@ pub struct Capability {
     /// SQL: Supports row-level locking. If false, then the driver is expected
     /// to serializable transaction-level isolation.
     pub select_for_update: bool,
-
-    /// Whether the SQL backend supports native `RETURNING` clauses on mutations.
-    pub native_sql_returning: bool,
 
     /// Whether updates can return complete post-update models.
     pub update_returning_new: bool,
@@ -585,7 +582,6 @@ impl Capability {
         schema_mutations: SchemaMutations::SQLITE,
         cte_with_update: false,
         select_for_update: false,
-        native_sql_returning: true,
         update_returning_new: true,
         update_returning_old: false,
         upsert_primary_key: true,
@@ -742,7 +738,6 @@ impl Capability {
         storage_types: StorageTypes::MYSQL,
         schema_mutations: SchemaMutations::MYSQL,
         select_for_update: true,
-        native_sql_returning: false,
         update_returning_new: false,
         update_returning_old: false,
         upsert_primary_key: false,
@@ -821,7 +816,6 @@ impl Capability {
         schema_mutations: SchemaMutations::DYNAMODB,
         cte_with_update: false,
         select_for_update: false,
-        native_sql_returning: false,
         update_returning_new: true,
         update_returning_old: true,
         upsert_primary_key: true,
