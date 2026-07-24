@@ -268,14 +268,12 @@ impl stmt::Visit for Verify<'_, '_> {
                 return;
             }
 
-            if returning.is_model() {
-                if !returning.is_old() && !self.capability.update_returning_new {
-                    self.record(Error::unsupported_feature(format!(
-                        "{} does not support returning new models from updates",
-                        self.capability.driver_name
-                    )));
-                    return;
-                }
+            if returning.uses_new() && !self.capability.update_returning_new {
+                self.record(Error::unsupported_feature(format!(
+                    "{} does not support returning new values from updates",
+                    self.capability.driver_name
+                )));
+                return;
             }
         }
 

@@ -120,7 +120,6 @@ fn make_query(
     let select = Select {
         returning: Returning::Project {
             expr: Expr::record([col(0, 0)]),
-            old: false,
         },
         source: users_source(),
         filter,
@@ -165,7 +164,6 @@ fn select_distinct() {
         let select = Select {
             returning: Returning::Project {
                 expr: Expr::record([col(0, 0)]),
-                old: false,
             },
             source: users_source(),
             filter: Filter::ALL,

@@ -413,6 +413,25 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     *expr = stmt::Expr::arg_project(position, [column]);
                     false
                 }
+                stmt::Expr::Project(project) if is_returning_projection => {
+                    let stmt::Expr::Mutation(stmt::ExprMutation::Table { table, image }) =
+                        project.base.as_ref()
+                    else {
+                        return true;
+                    };
+                    let [column] = project.projection.as_slice() else {
+                        panic!("mutation row projection must reference one column")
+                    };
+                    let selected = self
+                        .stmt_info
+                        .load_data_select_items
+                        .get()
+                        .unwrap()
+                        .get_index_of_mutation_column(*table, *column, *image);
+                    let (position, _) = inputs.insert_full(load_data_node_id);
+                    *expr = stmt::Expr::arg_project(position, [selected]);
+                    false
+                }
                 stmt::Expr::Func(stmt::ExprFunc::Count(stmt::FuncCount { arg: None, .. }))
                     if is_returning_projection =>
                 {
@@ -460,6 +479,23 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     "TODO: expr_reference = {expr_reference:#?}"
                 );
                 self.load_data.select_items.insert((*expr_reference).into());
+            }
+            stmt::Expr::Project(project) => {
+                let stmt::Expr::Mutation(stmt::ExprMutation::Table { table, image }) =
+                    project.base.as_ref()
+                else {
+                    return;
+                };
+                let [column] = project.projection.as_slice() else {
+                    panic!("mutation row projection must reference one column")
+                };
+                self.load_data
+                    .select_items
+                    .insert(SelectItem::MutationColumn {
+                        table: *table,
+                        column: *column,
+                        image: *image,
+                    });
             }
             stmt::Expr::Func(stmt::ExprFunc::Count(stmt::FuncCount { arg: None, .. })) => {
                 self.load_data.select_items.insert(SelectItem::CountStar);
@@ -656,7 +692,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         let sub_query = stmt::Select {
             returning: stmt::Returning::Project {
                 expr: stmt::Expr::record([1]),
-                old: false,
             },
             source: stmt::Source::Table(stmt::SourceTable {
                 tables,
@@ -815,6 +850,26 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             // Relation lowering can consume every root assignment. Model returns
             // still read the selected roots after the relation mutations finish.
             let update = stmt.into_update_unwrap();
+            if let Some(stmt::Returning::Project { expr }) = returning {
+                stmt::visit_mut::for_each_expr_mut(expr, |expr| {
+                    let stmt::Expr::Project(project) = expr else {
+                        return;
+                    };
+                    if !matches!(project.base.as_ref(), stmt::Expr::Mutation(_)) {
+                        return;
+                    }
+                    let [column] = project.projection.as_slice() else {
+                        panic!("mutation row projection must reference one column")
+                    };
+                    *expr = stmt::ExprColumn {
+                        nesting: 0,
+                        table: 0,
+                        column: *column,
+                    }
+                    .into();
+                });
+            }
+            self.load_data.select_items.unqualify_mutation_columns();
             stmt = stmt::Query::new_select(
                 stmt::Source::table(update.target.as_table_unwrap()),
                 update.filter,
@@ -823,6 +878,17 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         }
 
         let returns_count = returning.as_ref().is_some_and(stmt::Returning::is_count);
+
+        if !self.planner.engine.capability().sql
+            && returning
+                .as_ref()
+                .is_some_and(|returning| returning.is_old() && returning.uses_new())
+        {
+            return Err(toasty_core::Error::unsupported_feature(format!(
+                "{} does not support returning old and new values from one update",
+                self.planner.engine.capability().driver_name
+            )));
+        }
 
         if !self.planner.engine.capability().sql
             && !self.load_data.select_items.is_empty()
@@ -873,7 +939,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         } else if stmt.is_insert() {
             self.plan_insert(stmt)
         } else if self.planner.engine.capability().sql {
-            self.plan_data_loading_sql(stmt, returns_count, self.returns_old)
+            self.plan_data_loading_sql(stmt, returns_count)
         } else {
             self.plan_data_loading_nosql(stmt, returns_count)
         }
@@ -985,7 +1051,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         &mut self,
         mut stmt: stmt::Statement,
         returns_count: bool,
-        returns_old: bool,
     ) -> Result<mir::NodeId> {
         debug_assert!(self.planner.engine.capability().sql, "stmt={stmt:#?}");
         debug_assert!(!stmt.is_insert(), "stmt={stmt:#?}");
@@ -1002,7 +1067,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         .iter()
                         .map(|item| item.to_expr()),
                 ),
-                old: returns_old,
             });
         }
 
@@ -1255,7 +1319,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 filter: stmt::Filter::new(true),
                 returning: stmt::Returning::Project {
                     expr: conditional_probe_projection(cte_column(0, 0)),
-                    old: false,
                 },
                 distinct: false,
             })
@@ -1286,7 +1349,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         column: 1,
                     },
                 )]),
-                old: false,
             },
             distinct: false,
         });
@@ -1335,7 +1397,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 filter: stmt::Filter::new(true),
                 returning: stmt::Returning::Project {
                     expr: stmt::Expr::record_from_vec(vec![cte_column(0, 0), cte_column(0, 1)]),
-                    old: false,
                 },
                 distinct: false,
             })
@@ -1372,7 +1433,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 filter: stmt::Filter::new(true),
                 returning: stmt::Returning::Project {
                     expr: stmt::Expr::record_from_vec(columns),
-                    old: false,
                 },
                 distinct: false,
             })
@@ -2155,7 +2215,6 @@ fn conditional_probe_query(
         filter: stmt::Filter::new(filter),
         returning: stmt::Returning::Project {
             expr: stmt::Expr::record_from_vec(vec![condition]),
-            old: false,
         },
         distinct: false,
     })

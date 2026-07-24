@@ -487,7 +487,6 @@ impl ToSql for &stmt::Returning {
         match self {
             stmt::Returning::Project {
                 expr: stmt::Expr::Record(expr_record),
-                ..
             } => {
                 // Alias every projected field positionally (`AS column1`, ...).
                 // A nested SELECT/RETURNING referenced from an outer query (e.g.
@@ -505,7 +504,6 @@ impl ToSql for &stmt::Returning {
             }
             stmt::Returning::Project {
                 expr: stmt::Expr::Value(stmt::Value::Record(value_record)),
-                ..
             } => {
                 fmt!(f, Comma(&value_record.fields));
             }
@@ -700,7 +698,6 @@ impl ToSql for &stmt::Update {
 
         if let Some(returning) = returning {
             fmt!(&mut f, " RETURNING ");
-            f.returning_old = returning.is_old();
             returning.to_sql(&mut f);
         }
     }

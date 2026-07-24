@@ -1,5 +1,5 @@
 use super::{Expr, Include};
-use crate::stmt::{self, ExprSet, Node, Query, Statement};
+use crate::stmt::{self, ExprSet, MutationImage, Node, Query, Statement, Visit};
 
 /// Specifies what data a statement returns.
 ///
@@ -38,8 +38,6 @@ pub enum Returning {
     Project {
         /// Expression evaluated against the returned row.
         expr: Expr,
-        /// Whether the projection reads pre-update values.
-        old: bool,
     },
 
     /// Return a fixed expression, independent of the statement source.
@@ -55,7 +53,6 @@ impl Returning {
     {
         Returning::Project {
             expr: Expr::record(items),
-            old: false,
         }
     }
 
@@ -105,17 +102,49 @@ impl Returning {
     /// variant.
     pub fn as_project(&self) -> Option<&Expr> {
         match self {
-            Self::Project { expr, .. } => Some(expr),
+            Self::Project { expr } => Some(expr),
             _ => None,
         }
     }
 
     /// Returns `true` when this clause requests a pre-mutation model.
     pub fn is_old(&self) -> bool {
-        matches!(
-            self,
-            Self::Model { old: true, .. } | Self::Project { old: true, .. }
-        )
+        self.uses_image(MutationImage::Old)
+    }
+
+    /// Returns `true` when this clause reads post-mutation values.
+    pub fn uses_new(&self) -> bool {
+        self.uses_image(MutationImage::New)
+    }
+
+    fn uses_image(&self, image: MutationImage) -> bool {
+        match self {
+            Self::Model { old, .. } => {
+                return (*old && image == MutationImage::Old)
+                    || (!*old && image == MutationImage::New);
+            }
+            Self::Changed | Self::Count | Self::Expr(_) => return false,
+            Self::Project { .. } => {}
+        }
+
+        struct FindImage {
+            image: MutationImage,
+            found: bool,
+        }
+
+        impl Visit for FindImage {
+            fn visit_expr_mutation(&mut self, expr: &stmt::ExprMutation) {
+                self.found |= expr.image() == self.image;
+            }
+        }
+
+        let expr = self.as_project().unwrap();
+        let mut find = FindImage {
+            image,
+            found: false,
+        };
+        find.visit_expr(expr);
+        find.found
     }
 
     /// Returns a reference to the inner expression.
@@ -133,7 +162,7 @@ impl Returning {
     /// `Project` variant.
     pub fn as_project_mut(&mut self) -> Option<&mut Expr> {
         match self {
-            Self::Project { expr, .. } => Some(expr),
+            Self::Project { expr } => Some(expr),
             _ => None,
         }
     }
@@ -154,11 +183,7 @@ impl Returning {
     /// Replaces this returning clause with `Returning::Project` containing the
     /// given expression.
     pub fn set_project(&mut self, expr: impl Into<Expr>) {
-        let old = self.is_old();
-        *self = Returning::Project {
-            expr: expr.into(),
-            old,
-        };
+        *self = Returning::Project { expr: expr.into() };
     }
 
     /// Returns `true` if this is the `Expr` variant.
@@ -173,7 +198,6 @@ impl Returning {
             self,
             Returning::Project {
                 expr: stmt::Expr::null(),
-                old: false,
             },
         )
     }
@@ -220,10 +244,7 @@ impl Statement {
     /// Set the `Returning` clause to `Returning::Project` containing the given
     /// expression.
     pub fn set_returning_project(&mut self, expr: impl Into<Expr>) {
-        self.set_returning(Returning::Project {
-            expr: expr.into(),
-            old: false,
-        });
+        self.set_returning(Returning::Project { expr: expr.into() });
     }
 
     /// Set the `Returning` clause to `Returning::Expr` containing the given

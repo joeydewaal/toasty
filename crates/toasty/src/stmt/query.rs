@@ -530,7 +530,6 @@ impl<M: Model> Query<List<M>> {
         // Set the returning clause to COUNT(*)
         *self.untyped.returning_mut_unwrap() = Returning::Project {
             expr: stmt::Expr::count_star(),
-            old: false,
         };
         self.untyped.single = true;
 
@@ -589,7 +588,6 @@ impl<M: Model> Query<List<M>> {
     {
         *self.untyped.returning_mut_unwrap() = Returning::Project {
             expr: projection.into_expr().untyped,
-            old: false,
         };
 
         Query::from_untyped(self.untyped)

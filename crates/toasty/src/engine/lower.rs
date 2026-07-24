@@ -31,6 +31,42 @@ use toasty_core::{
 
 use crate::engine::{Engine, HirStatement, hir, simplify::Simplify, upsert};
 
+struct QualifyMutation {
+    model: app::ModelId,
+    table: toasty_core::schema::db::TableId,
+    image: stmt::MutationImage,
+}
+
+impl VisitMut for QualifyMutation {
+    fn visit_expr_mut(&mut self, expr: &mut stmt::Expr) {
+        if let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = expr {
+            *expr = stmt::Expr::project(
+                stmt::ExprMutation::Model {
+                    model: self.model,
+                    image: self.image,
+                },
+                [*index],
+            );
+            return;
+        }
+
+        if let stmt::Expr::Reference(stmt::ExprReference::Column(column)) = expr
+            && column.nesting == 0
+        {
+            *expr = stmt::Expr::project(
+                stmt::ExprMutation::Table {
+                    table: self.table,
+                    image: self.image,
+                },
+                [column.column],
+            );
+            return;
+        }
+
+        visit_mut::visit_expr_mut(self, expr);
+    }
+}
+
 /// Wrap a nullable single-relation subquery so a missing row passes through as
 /// `Null`, while a present row is transformed by `present`. Used when lowering
 /// `.include()`/`.select()` of nullable single (`Deferred<Option<_>>` /
@@ -831,6 +867,33 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 *project.base = stmt::ExprIncoming::table(table).into();
                 project.projection = stmt::Projection::from_index(column.index);
             }
+            stmt::Expr::Project(project)
+                if let stmt::Expr::Mutation(stmt::ExprMutation::Model { model, image }) =
+                    project.base.as_ref() =>
+            {
+                let (table, column) = {
+                    let mapping = self.schema().mapping_for(*model);
+                    let mapped = mapping
+                        .resolve_field_mapping(&project.projection)
+                        .expect("mutation row field must map to a column");
+                    let mut columns = mapped.columns();
+                    let (column, _) = columns
+                        .next()
+                        .expect("mutation row field has no database column");
+                    assert!(
+                        columns.next().is_none(),
+                        "mutation row projections do not support column-expanded embedded fields"
+                    );
+                    (mapping.table, column)
+                };
+                debug_assert_eq!(table, column.table);
+                *project.base = stmt::ExprMutation::Table {
+                    table,
+                    image: *image,
+                }
+                .into();
+                project.projection = stmt::Projection::from_index(column.index);
+            }
             // A null-check on an `Option<Embed>` field reduces to a null-check on
             // the embed's head column instead of distributing the check over
             // every flattened column. The head column is `NULL` for `None`, so
@@ -1059,10 +1122,20 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             }
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
-            *i = stmt::Returning::Project {
-                expr: returning,
-                old,
-            };
+            if matches!(self.cx, LoweringContext::Update) {
+                QualifyMutation {
+                    model: self.mapping_unwrap().id,
+                    table: self.mapping_unwrap().table,
+                    image: if old {
+                        stmt::MutationImage::Old
+                    } else {
+                        stmt::MutationImage::New
+                    },
+                }
+                .visit_expr_mut(&mut returning);
+            }
+
+            *i = stmt::Returning::Project { expr: returning };
         }
 
         // For multi-row INSERT returning, visit each row with its row index so
@@ -1240,7 +1313,6 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 // Step 2 — build the returning expression.
                 *returning = stmt::Returning::Project {
                     expr: build_update_returning(model.id, None, &mapping.fields, &changed_bits),
-                    old: false,
                 };
             }
         }

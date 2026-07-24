@@ -325,7 +325,6 @@ impl LowerStatement<'_, '_> {
                 };
                 select.returning = stmt::Returning::Project {
                     expr: stmt::Expr::record([1]),
-                    old: false,
                 };
                 query
             }));
@@ -581,7 +580,6 @@ impl LowerStatement<'_, '_> {
                             .iter()
                             .map(|fk_field| stmt::Expr::ref_self_field(fk_field.target)),
                     ),
-                    old: false,
                 });
 
                 let target_id = self.new_dependency(insert);

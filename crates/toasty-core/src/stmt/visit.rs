@@ -5,12 +5,12 @@ use super::{
     ExprAny, ExprAnyOp, ExprArg, ExprBetween, ExprBinaryOp, ExprCast, ExprColumn, ExprError,
     ExprExists, ExprFunc, ExprInList, ExprInSubquery, ExprIncoming, ExprIntersects, ExprIsNull,
     ExprIsSuperset, ExprIsVariant, ExprLength, ExprLet, ExprLike, ExprList, ExprMap, ExprMatch,
-    ExprNot, ExprOr, ExprProject, ExprRecord, ExprReference, ExprSet, ExprSetOp, ExprStartsWith,
-    ExprStmt, Filter, FuncCount, FuncJsonExtract, FuncLastInsertId, Include, Insert, InsertTarget,
-    Join, JoinOp, Limit, LimitCursor, LimitOffset, Node, OrderBy, OrderByExpr, Path, Projection,
-    Query, Returning, Select, Source, SourceModel, SourceTable, SourceTableId, Statement,
-    TableDerived, TableFactor, TableRef, TableWithJoins, Type, Update, UpdateTarget, Value,
-    ValueRecord, Values, With,
+    ExprMutation, ExprNot, ExprOr, ExprProject, ExprRecord, ExprReference, ExprSet, ExprSetOp,
+    ExprStartsWith, ExprStmt, Filter, FuncCount, FuncJsonExtract, FuncLastInsertId, Include,
+    Insert, InsertTarget, Join, JoinOp, Limit, LimitCursor, LimitOffset, Node, OrderBy,
+    OrderByExpr, Path, Projection, Query, Returning, Select, Source, SourceModel, SourceTable,
+    SourceTableId, Statement, TableDerived, TableFactor, TableRef, TableWithJoins, Type, Update,
+    UpdateTarget, Value, ValueRecord, Values, With,
 };
 
 /// Immutable visitor trait for the statement AST.
@@ -209,6 +209,11 @@ pub trait Visit {
     /// The default implementation delegates to [`visit_expr_incoming`].
     fn visit_expr_incoming(&mut self, i: &ExprIncoming) {
         visit_expr_incoming(self, i);
+    }
+
+    /// Visits an [`ExprMutation`] node.
+    fn visit_expr_mutation(&mut self, i: &ExprMutation) {
+        visit_expr_mutation(self, i);
     }
 
     /// Visits an [`ExprIntersects`] node.
@@ -665,6 +670,10 @@ impl<V: Visit> Visit for &mut V {
         Visit::visit_expr_incoming(&mut **self, i);
     }
 
+    fn visit_expr_mutation(&mut self, i: &ExprMutation) {
+        Visit::visit_expr_mutation(&mut **self, i);
+    }
+
     fn visit_expr_intersects(&mut self, i: &ExprIntersects) {
         Visit::visit_expr_intersects(&mut **self, i);
     }
@@ -946,6 +955,7 @@ where
         Expr::InList(expr) => v.visit_expr_in_list(expr),
         Expr::InSubquery(expr) => v.visit_expr_in_subquery(expr),
         Expr::Incoming(expr) => v.visit_expr_incoming(expr),
+        Expr::Mutation(expr) => v.visit_expr_mutation(expr),
         Expr::Intersects(expr) => v.visit_expr_intersects(expr),
         Expr::IsNull(expr) => v.visit_expr_is_null(expr),
         Expr::IsSuperset(expr) => v.visit_expr_is_superset(expr),
@@ -1073,6 +1083,13 @@ where
 
 /// Default traversal for [`ExprIncoming`] nodes. This is a leaf node with no children to visit.
 pub fn visit_expr_incoming<V>(_v: &mut V, _node: &ExprIncoming)
+where
+    V: Visit + ?Sized,
+{
+}
+
+/// Default traversal for [`ExprMutation`] nodes. This is a leaf node.
+pub fn visit_expr_mutation<V>(_v: &mut V, _node: &ExprMutation)
 where
     V: Visit + ?Sized,
 {
@@ -1439,7 +1456,7 @@ where
             }
         }
         Returning::Changed | Returning::Count => {}
-        Returning::Project { expr, .. } => v.visit_expr(expr),
+        Returning::Project { expr } => v.visit_expr(expr),
         Returning::Expr(expr) => v.visit_expr(expr),
     }
 }

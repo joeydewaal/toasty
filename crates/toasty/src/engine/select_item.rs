@@ -13,6 +13,13 @@ pub(crate) enum SelectItem {
     /// A reference to a column or field — the traditional case.
     ExprReference(stmt::ExprReference),
 
+    /// A column from an update's old or new row image.
+    MutationColumn {
+        table: toasty_core::schema::db::TableId,
+        column: usize,
+        image: stmt::MutationImage,
+    },
+
     /// The `COUNT(*)` aggregate. SQL-only.
     CountStar,
 }
@@ -23,6 +30,9 @@ impl SelectItem {
     pub(crate) fn as_expr_reference_unwrap(&self) -> &stmt::ExprReference {
         match self {
             SelectItem::ExprReference(r) => r,
+            SelectItem::MutationColumn { .. } => {
+                panic!("mutation columns do not contain a direct expression reference")
+            }
             other => panic!("expected ExprReference, got {other:?}"),
         }
     }
@@ -31,6 +41,13 @@ impl SelectItem {
     pub(crate) fn infer_ty(&self, cx: &stmt::ExprContext<'_>) -> stmt::Type {
         match self {
             SelectItem::ExprReference(expr_reference) => cx.infer_expr_reference_ty(expr_reference),
+            SelectItem::MutationColumn { column, .. } => {
+                cx.infer_expr_reference_ty(&stmt::ExprReference::Column(stmt::ExprColumn {
+                    nesting: 0,
+                    table: 0,
+                    column: *column,
+                }))
+            }
             SelectItem::CountStar => stmt::Type::U64,
         }
     }
@@ -39,6 +56,11 @@ impl SelectItem {
     pub(crate) fn to_expr(self) -> stmt::Expr {
         match self {
             SelectItem::ExprReference(expr_reference) => stmt::Expr::from(expr_reference),
+            SelectItem::MutationColumn {
+                table,
+                column,
+                image,
+            } => stmt::Expr::project(stmt::ExprMutation::Table { table, image }, [column]),
             SelectItem::CountStar => stmt::Expr::count_star(),
         }
     }
@@ -79,9 +101,41 @@ impl SelectItems {
             .unwrap()
     }
 
+    pub(crate) fn get_index_of_mutation_column(
+        &self,
+        table: toasty_core::schema::db::TableId,
+        column: usize,
+        image: stmt::MutationImage,
+    ) -> usize {
+        self.0
+            .get_index_of(&SelectItem::MutationColumn {
+                table,
+                column,
+                image,
+            })
+            .unwrap()
+    }
+
     /// Find the index of the `CountStar` item.
     pub(crate) fn get_index_of_count_star(&self) -> usize {
         self.0.get_index_of(&SelectItem::CountStar).unwrap()
+    }
+
+    pub(crate) fn unqualify_mutation_columns(&mut self) {
+        self.0 = self
+            .0
+            .drain(..)
+            .map(|item| match item {
+                SelectItem::MutationColumn { column, .. } => {
+                    SelectItem::ExprReference(stmt::ExprReference::Column(stmt::ExprColumn {
+                        nesting: 0,
+                        table: 0,
+                        column,
+                    }))
+                }
+                item => item,
+            })
+            .collect();
     }
 
     /// Returns `Type::List(Type::Record(field_tys))` where each `field_ty` is
@@ -97,7 +151,19 @@ impl SelectItems {
     pub(crate) fn extract_expr_references(&self) -> indexmap::IndexSet<stmt::ExprReference> {
         self.0
             .iter()
-            .map(|item| *item.as_expr_reference_unwrap())
+            .map(|item| match item {
+                SelectItem::ExprReference(reference) => *reference,
+                SelectItem::MutationColumn { column, .. } => {
+                    stmt::ExprReference::Column(stmt::ExprColumn {
+                        nesting: 0,
+                        table: 0,
+                        column: *column,
+                    })
+                }
+                SelectItem::CountStar => {
+                    panic!("COUNT(*) cannot be extracted as an expression reference")
+                }
+            })
             .collect()
     }
 }

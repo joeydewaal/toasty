@@ -558,10 +558,7 @@ fn lift_fk_in_subquery(
     }
 
     let mut subquery = query.clone();
-    subquery.body.as_select_mut_unwrap().returning = stmt::Returning::Project {
-        expr: returning,
-        old: false,
-    };
+    subquery.body.as_select_mut_unwrap().returning = stmt::Returning::Project { expr: returning };
 
     Some(stmt::Expr::in_subquery(lhs, subquery))
 }

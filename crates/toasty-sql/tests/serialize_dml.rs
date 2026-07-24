@@ -9,8 +9,8 @@ use expect_test::expect;
 use toasty_core::{
     schema::db::{Column, ColumnId, PrimaryKey, Schema, Table, TableId, Type as StorageType},
     stmt::{
-        self, Assignments, Delete, Expr, ExprColumn, Filter, Insert, InsertTable, InsertTarget,
-        Returning, Source, Update, UpdateTarget, Values,
+        self, Assignments, Delete, Expr, ExprColumn, ExprMutation, Filter, Insert, InsertTable,
+        InsertTarget, Returning, Source, Update, UpdateTarget, Values,
     },
 };
 use toasty_sql::{Serializer, Statement as SqlStatement};
@@ -192,7 +192,6 @@ fn insert_with_returning() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     expect![[r#"INSERT INTO "users" ("id", "name") VALUES (1, 'a') RETURNING "id" AS column1;"#]]
         .assert_eq(&render(
@@ -214,7 +213,6 @@ fn insert_returning_panics_on_mysql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     render(Flavor::Mysql, &schema, insert_basic(returning));
 }
@@ -268,7 +266,6 @@ fn update_with_returning() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     expect![[
         r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING "id" AS column1;"#
@@ -292,8 +289,10 @@ fn update_with_returning() {
 fn update_with_returning_old_postgresql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
-        expr: Expr::record([col(0, 0), col(0, 1)]),
-        old: true,
+        expr: Expr::record([
+            Expr::project(ExprMutation::old_table(TableId(0)), [0usize]),
+            Expr::project(ExprMutation::old_table(TableId(0)), [1usize]),
+        ]),
     });
     let update = update_stmt(true, returning);
     expect![[
@@ -307,12 +306,31 @@ fn update_with_returning_old_postgresql() {
 }
 
 #[test]
+fn update_with_returning_old_and_new_postgresql() {
+    let schema = users_schema();
+    let returning = Some(Returning::Project {
+        expr: Expr::record([
+            Expr::project(ExprMutation::old_table(TableId(0)), [1usize]),
+            Expr::project(ExprMutation::new_table(TableId(0)), [1usize]),
+        ]),
+    });
+
+    expect![[
+        r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING old."name" AS column1, "name" AS column2;"#
+    ]]
+    .assert_eq(&render(
+        Flavor::Postgresql,
+        &schema,
+        update_stmt(true, returning),
+    ));
+}
+
+#[test]
 #[should_panic(expected = "MySQL does not support the RETURNING clause with UPDATE")]
 fn update_returning_panics_on_mysql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     render(Flavor::Mysql, &schema, update_stmt(true, returning));
 }
@@ -375,7 +393,6 @@ fn delete_with_returning_panics_on_mysql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     render(Flavor::Mysql, &schema, delete_stmt(true, returning));
 }
@@ -393,7 +410,6 @@ fn delete_with_returning_postgresql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     // Expected string stays empty — will be populated when the serializer
     // learns to emit DELETE+RETURNING.
@@ -410,7 +426,6 @@ fn delete_with_returning_sqlite() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([col(0, 0)]),
-        old: false,
     });
     // Expected string stays empty — will be populated when the serializer
     // learns to emit DELETE+RETURNING.

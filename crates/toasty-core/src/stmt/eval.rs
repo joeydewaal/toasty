@@ -445,6 +445,9 @@ impl Expr {
             Expr::Incoming(_) => Err(crate::Error::expression_evaluation_failed(
                 "incoming values can only be evaluated by the database",
             )),
+            Expr::Mutation(_) => Err(crate::Error::expression_evaluation_failed(
+                "mutation rows can only be evaluated by the database",
+            )),
             _ => todo!("expr={self:#?}"),
         }
     }

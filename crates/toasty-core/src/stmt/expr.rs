@@ -4,8 +4,8 @@ use super::{
     Entry, EntryMut, EntryPath, ExprAllOp, ExprAnd, ExprAny, ExprAnyOp, ExprArg, ExprBetween,
     ExprBinaryOp, ExprCast, ExprError, ExprFunc, ExprInList, ExprInSubquery, ExprIncoming,
     ExprIntersects, ExprIsNull, ExprIsSuperset, ExprIsVariant, ExprLength, ExprLet, ExprLike,
-    ExprList, ExprMap, ExprMatch, ExprNot, ExprOr, ExprProject, ExprRecord, ExprStartsWith,
-    ExprStmt, Node, Projection, Resolve, Substitute, Type, Value, Visit, VisitMut,
+    ExprList, ExprMap, ExprMatch, ExprMutation, ExprNot, ExprOr, ExprProject, ExprRecord,
+    ExprStartsWith, ExprStmt, Node, Projection, Resolve, Substitute, Type, Value, Visit, VisitMut,
     expr_reference::ExprReference,
 };
 use std::fmt;
@@ -90,6 +90,9 @@ pub enum Expr {
 
     /// The row proposed by an upsert's create branch. See [`ExprIncoming`].
     Incoming(ExprIncoming),
+
+    /// An old or new row produced by an update. See [`ExprMutation`].
+    Mutation(ExprMutation),
 
     /// Boolean: two array operands share at least one element
     /// (PostgreSQL `&&`). See [`ExprIntersects`].
@@ -418,7 +421,7 @@ impl Expr {
             }
 
             // References and statements - stable (they reference existing data)
-            Self::Reference(_) | Self::Incoming(_) | Self::Arg(_) => true,
+            Self::Reference(_) | Self::Incoming(_) | Self::Mutation(_) | Self::Arg(_) => true,
 
             // Array predicates and length — stable if all operands are stable.
             Self::IsSuperset(e) => e.lhs.is_stable() && e.rhs.is_stable(),
@@ -481,6 +484,7 @@ impl Expr {
             // Never constant - references external data
             Self::Reference(_)
             | Self::Incoming(_)
+            | Self::Mutation(_)
             | Self::Stmt(_)
             | Self::InSubquery(_)
             | Self::Exists(_)
@@ -588,6 +592,7 @@ impl Expr {
             Self::Default
             | Self::Reference(_)
             | Self::Incoming(_)
+            | Self::Mutation(_)
             | Self::Stmt(_)
             | Self::InSubquery(_)
             | Self::Exists(_)
@@ -795,6 +800,7 @@ impl fmt::Debug for Expr {
             Self::InList(e) => e.fmt(f),
             Self::InSubquery(e) => e.fmt(f),
             Self::Incoming(e) => write!(f, "Incoming({e:?})"),
+            Self::Mutation(e) => write!(f, "Mutation({e:?})"),
             Self::Intersects(e) => e.fmt(f),
             Self::IsNull(e) => e.fmt(f),
             Self::IsSuperset(e) => e.fmt(f),

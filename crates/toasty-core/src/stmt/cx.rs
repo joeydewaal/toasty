@@ -431,7 +431,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             }
             Returning::Changed => todo!(),
             Returning::Count => Type::U64,
-            Returning::Project { expr, .. } => {
+            Returning::Project { expr } => {
                 let ty = self.infer_expr_ty2(&arg_ty_stack, expr, false);
 
                 if single { ty } else { Type::list(ty) }
@@ -582,6 +582,21 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
                 super::ExprIncoming::Table(table) => {
                     let table = self.schema.table(*table).unwrap_or_else(|| {
                         panic!("incoming table {table:?} is not present in the schema")
+                    });
+                    Type::Record(
+                        table
+                            .columns
+                            .iter()
+                            .map(|column| column.ty.clone())
+                            .collect(),
+                    )
+                }
+            },
+            Expr::Mutation(mutation) => match mutation {
+                super::ExprMutation::Model { model, .. } => Type::Model(*model),
+                super::ExprMutation::Table { table, .. } => {
+                    let table = self.schema.table(*table).unwrap_or_else(|| {
+                        panic!("mutation table {table:?} is not present in the schema")
                     });
                     Type::Record(
                         table

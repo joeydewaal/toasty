@@ -94,7 +94,6 @@ impl<'a> RewriteVia<'a> {
             if let Some((target, terminal)) = scalar_terminal {
                 select.returning = stmt::Returning::Project {
                     expr: stmt::Path::field(target, terminal).into_stmt(),
-                    old: false,
                 };
             }
 
@@ -216,10 +215,7 @@ impl<'a> RewriteVia<'a> {
         let returning = super::key_field_refs(0, rel.foreign_key.fields.iter().map(|fk| fk.source));
 
         let mut source = *association.source;
-        source.body.as_select_mut_unwrap().returning = stmt::Returning::Project {
-            expr: returning,
-            old: false,
-        };
+        source.body.as_select_mut_unwrap().returning = stmt::Returning::Project { expr: returning };
 
         stmt::Expr::in_subquery(target, source).into()
     }

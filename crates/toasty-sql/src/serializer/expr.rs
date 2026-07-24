@@ -54,7 +54,30 @@ impl ToSql for &stmt::Expr {
                 };
                 fmt!(f, "excluded." f.serializer.column_name(column));
             }
+            stmt::Expr::Project(project)
+                if let stmt::Expr::Mutation(mutation) = project.base.as_ref() =>
+            {
+                let stmt::ExprMutation::Table { table, image } = mutation else {
+                    panic!("mutation projection was not lowered")
+                };
+                let [column] = project.projection.as_slice() else {
+                    panic!("lowered mutation projection must reference one column")
+                };
+                let column = ColumnId {
+                    table: *table,
+                    index: *column,
+                };
+                let name = f.serializer.column_name(column);
+                match (&f.serializer.flavor, image) {
+                    (Flavor::Postgresql, stmt::MutationImage::Old) => fmt!(f, "old." name),
+                    (_, stmt::MutationImage::New) => fmt!(f, name),
+                    (_, stmt::MutationImage::Old) => {
+                        panic!("old mutation rows are only supported by PostgreSQL")
+                    }
+                }
+            }
             stmt::Expr::Incoming(_) => panic!("incoming row must be projected"),
+            stmt::Expr::Mutation(_) => panic!("mutation row must be projected"),
             stmt::Expr::IsSuperset(e) => match f.serializer.flavor {
                 Flavor::Postgresql => fmt!(f, e.lhs.as_ref() " @> " e.rhs.as_ref()),
                 // The rhs Value::List is bound as one JSON string. MySQL's
@@ -203,11 +226,6 @@ impl ToSql for &stmt::Expr {
                         f.cx.resolve_expr_reference(expr_reference)
                             .as_column_unwrap();
                     if matches!(f.serializer.flavor, Flavor::Postgresql)
-                        && expr_column.nesting == 0
-                        && f.returning_old
-                    {
-                        fmt!(f, "old." Ident(&column.name))
-                    } else if matches!(f.serializer.flavor, Flavor::Postgresql)
                         && expr_column.nesting == 0
                         && f.assignment_table == Some(column.id.table)
                     {
