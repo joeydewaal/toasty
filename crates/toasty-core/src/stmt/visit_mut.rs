@@ -1435,7 +1435,7 @@ where
     V: VisitMut + ?Sized,
 {
     match node {
-        Returning::Model { include } | Returning::ModelUnloaded { include } => {
+        Returning::Model { include, .. } => {
             for inc in include {
                 v.visit_include_mut(inc);
             }
@@ -1443,7 +1443,6 @@ where
         Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr_mut(expr),
         Returning::Expr(expr) => v.visit_expr_mut(expr),
-        Returning::Old(returning) => v.visit_returning_mut(returning),
     }
 }
 

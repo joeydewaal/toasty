@@ -51,11 +51,11 @@ fn returns_old(stmt: &stmt::Statement) -> bool {
     struct FindOld(bool);
 
     impl stmt::Visit for FindOld {
-        fn visit_returning(&mut self, returning: &stmt::Returning) {
-            if returning.is_old() {
+        fn visit_stmt_update(&mut self, update: &stmt::Update) {
+            if update.returning_old {
                 self.0 = true;
             }
-            stmt::visit::visit_returning(self, returning);
+            stmt::visit::visit_stmt_update(self, update);
         }
     }
 

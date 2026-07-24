@@ -1433,7 +1433,7 @@ where
     V: Visit + ?Sized,
 {
     match node {
-        Returning::Model { include } | Returning::ModelUnloaded { include } => {
+        Returning::Model { include, .. } => {
             for inc in include {
                 v.visit_include(inc);
             }
@@ -1441,7 +1441,6 @@ where
         Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr(expr),
         Returning::Expr(expr) => v.visit_expr(expr),
-        Returning::Old(returning) => v.visit_returning(returning),
     }
 }
 

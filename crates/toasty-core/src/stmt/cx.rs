@@ -420,7 +420,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
         let arg_ty_stack = ArgTyStack::new(args);
 
         match returning {
-            Returning::Model { .. } | Returning::ModelUnloaded { .. } => {
+            Returning::Model { .. } => {
                 let ty = Type::Model(
                     self.target
                         .model_id()
@@ -437,7 +437,6 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
                 if single { ty } else { Type::list(ty) }
             }
             Returning::Expr(expr) => self.infer_expr_ty2(&arg_ty_stack, expr, true),
-            Returning::Old(returning) => self.infer_returning_ty(returning, args, single),
         }
     }
 

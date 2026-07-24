@@ -66,7 +66,10 @@ fn query_all() {
         filter: {
             expr: Some(core_stmt::Expr::Value(core_stmt::Value::Bool(true))),
         },
-        returning: core_stmt::Returning::Model { include: [] },
+        returning: core_stmt::Returning::Model {
+            include: [],
+            old: false,
+        },
     });
 }
 

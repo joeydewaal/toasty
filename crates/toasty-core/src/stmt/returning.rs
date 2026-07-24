@@ -11,7 +11,10 @@ use crate::stmt::{self, ExprSet, Node, Query, Statement};
 /// ```ignore
 /// use toasty_core::stmt::Returning;
 ///
-/// let ret = Returning::Model { include: vec![] };
+/// let ret = Returning::Model {
+///     include: vec![],
+///     old: false,
+/// };
 /// assert!(ret.is_model());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -21,12 +24,8 @@ pub enum Returning {
         /// Associations that should be eagerly loaded, with optional
         /// per-relation filters.
         include: Vec<Include>,
-    },
-
-    /// Return the model without implicitly loading relation fields.
-    ModelUnloaded {
-        /// Explicit relation includes. Usually empty for mutation results.
-        include: Vec<Include>,
+        /// Return the model as it was before an update.
+        old: bool,
     },
 
     /// Return whether the operation changed any rows.
@@ -40,9 +39,6 @@ pub enum Returning {
 
     /// Return a fixed expression, independent of the statement source.
     Expr(Expr),
-
-    /// Return values from before the mutation instead of after it.
-    Old(Box<Returning>),
 }
 
 impl Returning {
@@ -57,19 +53,14 @@ impl Returning {
 
     /// Returns `true` if this is the `Model` variant.
     pub fn is_model(&self) -> bool {
-        match self {
-            Self::Model { .. } | Self::ModelUnloaded { .. } => true,
-            Self::Old(returning) => returning.is_model(),
-            _ => false,
-        }
+        matches!(self, Self::Model { .. })
     }
 
     /// Returns the association includes for a `Model` variant, or an
     /// empty slice for other variants.
     pub fn model_includes(&self) -> &[Include] {
         match self {
-            Self::Model { include } | Self::ModelUnloaded { include } => include,
-            Self::Old(returning) => returning.model_includes(),
+            Self::Model { include, .. } => include,
             _ => &[],
         }
     }
@@ -82,8 +73,7 @@ impl Returning {
     #[track_caller]
     pub fn model_includes_mut_unwrap(&mut self) -> &mut Vec<Include> {
         match self {
-            Self::Model { include } | Self::ModelUnloaded { include } => include,
-            Self::Old(returning) => returning.model_includes_mut_unwrap(),
+            Self::Model { include, .. } => include,
             _ => panic!("not a Model variant"),
         }
     }
@@ -100,11 +90,7 @@ impl Returning {
 
     /// Returns `true` if this is the `Project` variant.
     pub fn is_project(&self) -> bool {
-        match self {
-            Self::Project(_) => true,
-            Self::Old(returning) => returning.is_project(),
-            _ => false,
-        }
+        matches!(self, Self::Project(_))
     }
 
     /// Returns a reference to the inner expression if this is the `Project`
@@ -112,33 +98,13 @@ impl Returning {
     pub fn as_project(&self) -> Option<&Expr> {
         match self {
             Self::Project(expr) => Some(expr),
-            Self::Old(returning) => returning.as_project(),
             _ => None,
         }
     }
 
-    /// Returns `true` when this clause requests pre-mutation values.
+    /// Returns `true` when this clause requests a pre-mutation model.
     pub fn is_old(&self) -> bool {
-        match self {
-            Self::Old(_) => true,
-            _ => false,
-        }
-    }
-
-    /// Select pre-mutation values.
-    pub fn into_old(self) -> Self {
-        match self {
-            Self::Old(_) => self,
-            returning => Self::Old(Box::new(returning)),
-        }
-    }
-
-    /// Select post-mutation values.
-    pub fn into_new(self) -> Self {
-        match self {
-            Self::Old(returning) => *returning,
-            returning => returning,
-        }
+        matches!(self, Self::Model { old: true, .. })
     }
 
     /// Returns a reference to the inner expression.
@@ -157,7 +123,6 @@ impl Returning {
     pub fn as_project_mut(&mut self) -> Option<&mut Expr> {
         match self {
             Self::Project(expr) => Some(expr),
-            Self::Old(returning) => returning.as_project_mut(),
             _ => None,
         }
     }
@@ -178,19 +143,12 @@ impl Returning {
     /// Replaces this returning clause with `Returning::Project` containing the
     /// given expression.
     pub fn set_project(&mut self, expr: impl Into<Expr>) {
-        match self {
-            Self::Old(returning) => returning.set_project(expr),
-            returning => *returning = Returning::Project(expr.into()),
-        }
+        *self = Returning::Project(expr.into());
     }
 
     /// Returns `true` if this is the `Expr` variant.
     pub fn is_expr(&self) -> bool {
-        match self {
-            Self::Expr(_) => true,
-            Self::Old(returning) => returning.is_expr(),
-            _ => false,
-        }
+        matches!(self, Self::Expr(..))
     }
 
     /// Takes this returning clause, replacing it with `Returning::Project(null)`,

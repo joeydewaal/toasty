@@ -719,6 +719,7 @@ mod tests {
             filter: Filter::ALL,
             condition: Condition::default(),
             returning: Some(returning),
+            returning_old: false,
         }
         .into()
     }
@@ -800,7 +801,10 @@ mod tests {
     fn update_returning_new_rejected_on_mysql() {
         let stmt = update_returning(
             toasty_core::schema::app::ModelId(0),
-            Returning::Model { include: vec![] },
+            Returning::Model {
+                include: vec![],
+                old: false,
+            },
         );
         let err =
             verify_with(&Capability::MYSQL, stmt).expect_err("expected unsupported_feature error");
@@ -811,24 +815,14 @@ mod tests {
     fn update_returning_old_rejected_on_sqlite() {
         let stmt = update_returning(
             toasty_core::schema::app::ModelId(0),
-            Returning::Model { include: vec![] }.into_old(),
+            Returning::Model {
+                include: vec![],
+                old: true,
+            },
         );
         let err =
             verify_with(&Capability::SQLITE, stmt).expect_err("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
-    }
-
-    #[test]
-    fn update_returning_old_project_rejected_when_unsupported() {
-        for capability in [&Capability::SQLITE, &Capability::MYSQL] {
-            let stmt = update_returning(
-                toasty_core::schema::app::ModelId(0),
-                Returning::Project(Expr::arg(0)).into_old(),
-            );
-            let err =
-                verify_with(capability, stmt).expect_err("expected unsupported_feature error");
-            assert!(err.is_unsupported_feature());
-        }
     }
 
     #[test]
@@ -842,7 +836,10 @@ mod tests {
         }
 
         let schema = test_schema_with(&[User::schema()]);
-        let returning = Returning::Model { include: vec![] }.into_old();
+        let returning = Returning::Model {
+            include: vec![],
+            old: true,
+        };
         assert!(
             verify_with_schema(
                 &schema,

@@ -187,6 +187,9 @@ enum LoweringContext<'a> {
     /// parent INSERT's row index when visiting a per-row returning expression.
     Returning(Option<usize>),
 
+    /// Lowering an update statement.
+    Update,
+
     /// All other lowering cases
     Statement,
 }
@@ -1034,8 +1037,9 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
-        let load_implicit_relations = matches!(i, stmt::Returning::Model { .. });
-        if let stmt::Returning::Model { include } | stmt::Returning::ModelUnloaded { include } = i {
+        let load_implicit_relations = matches!(i, stmt::Returning::Model { .. })
+            && !matches!(self.cx, LoweringContext::Update);
+        if let stmt::Returning::Model { include, .. } = i {
             // Start from the schema's pre-computed default returning — every
             // Deferred fields, top-level or nested, are already `Null`.
             // `process_top_level_includes` then splices loaded forms in for
@@ -1206,6 +1210,9 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
 
     fn visit_stmt_update_mut(&mut self, stmt: &mut stmt::Update) {
         let mut lower = self.scope_expr(&stmt.target);
+        lower.cx = LoweringContext::Update;
+
+        stmt.returning_old = stmt.returning.as_ref().is_some_and(stmt::Returning::is_old);
 
         let mut returning_changed = false;
 
@@ -1272,7 +1279,12 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
         if let Some(returning) = &mut stmt.returning {
             lower.visit_returning_mut(returning);
             // Use the lowered assignments (which are now column-indexed)
-            returning::constantize_update_returning(lower.expr_cx, returning, &stmt.assignments);
+            returning::constantize_update_returning(
+                lower.expr_cx,
+                returning,
+                &stmt.assignments,
+                stmt.returning_old,
+            );
         }
 
         self.visit_update_target_mut(&mut stmt.target);
@@ -1602,6 +1614,7 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
     fn lower_expr_field(&self, nesting: usize, index: usize) -> stmt::Expr {
         match self.cx {
             LoweringContext::Statement
+            | LoweringContext::Update
             | LoweringContext::Returning(_)
             | LoweringContext::Insert(..) => {
                 // Upsert update assignments are visited in the surrounding
@@ -1994,7 +2007,7 @@ impl LoweringContext<'_> {
     }
 
     fn is_statement(&self) -> bool {
-        matches!(self, LoweringContext::Statement)
+        matches!(self, LoweringContext::Statement | LoweringContext::Update)
     }
 }
 

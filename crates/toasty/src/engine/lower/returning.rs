@@ -360,8 +360,9 @@ pub(super) fn constantize_update_returning(
     cx: stmt::ExprContext<'_>,
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
+    returning_old: bool,
 ) {
-    if returning.is_old() {
+    if returning_old {
         return;
     }
 

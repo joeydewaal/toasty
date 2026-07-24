@@ -268,48 +268,42 @@ impl Expand<'_> {
                 /// Return every updated model.
                 #vis fn returning_all(mut self) -> #toasty::stmt::Update<#toasty::List<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: false },
                     )
                 }
 
                 /// Return the first updated model, or `None` when no row matched.
                 #vis fn returning_first(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateFirst<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: false },
                     )
                 }
 
                 /// Return one updated model, or a record-not-found error when no row matched.
                 #vis fn returning_one(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateOne<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: false },
                     )
                 }
 
                 /// Return every model as it was before the update.
                 #vis fn returning_all_old(mut self) -> #toasty::stmt::Update<#toasty::List<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::Old(Box::new(
-                            #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
-                        )),
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: true },
                     )
                 }
 
                 /// Return the first model as it was before the update, or `None` when no row matched.
                 #vis fn returning_first_old(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateFirst<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::Old(Box::new(
-                            #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
-                        )),
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: true },
                     )
                 }
 
                 /// Return one model as it was before the update, or a record-not-found error when no row matched.
                 #vis fn returning_one_old(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateOne<#model_ident>> {
                     self.build_update().with_returning(
-                        #toasty::core::stmt::Returning::Old(Box::new(
-                            #toasty::core::stmt::Returning::ModelUnloaded { include: vec![] },
-                        )),
+                        #toasty::core::stmt::Returning::Model { include: vec![], old: true },
                     )
                 }
             }

@@ -192,10 +192,9 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     // ===== Entry point =====
 
     fn plan(&mut self, mut stmt: stmt::Statement) -> Result<()> {
+        let returns_old = matches!(&stmt, stmt::Statement::Update(update) if update.returning_old);
         let mut returning = stmt.take_returning();
-        let returns_old = returning.as_ref().is_some_and(stmt::Returning::is_old);
         self.returns_old = returns_old;
-        returning = returning.map(stmt::Returning::into_new);
         // For single VALUES queries (e.g., batch queries), the VALUES body is
         // the output expression. Extract it as a returning value so the planner
         // can wire up sub-statement dependencies. An empty VALUES body (e.g. an
@@ -243,7 +242,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             self.rewrite_stmt_update_arg_dependencies(update);
         }
 
-        let load_data_node_id = self.plan_data_loading(stmt, &mut returning, returns_old)?;
+        let load_data_node_id = self.plan_data_loading(stmt, &mut returning)?;
 
         // Track the exec statement operation node.
         self.stmt_info
@@ -805,7 +804,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         &mut self,
         mut stmt: stmt::Statement,
         returning: &mut Returning,
-        returns_old: bool,
     ) -> Result<mir::NodeId> {
         if stmt.assignments().is_some_and(stmt::Assignments::is_empty)
             && returning.as_ref().is_some_and(stmt::Returning::is_project)
@@ -871,7 +869,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         } else if stmt.is_insert() {
             self.plan_insert(stmt)
         } else if self.planner.engine.capability().sql {
-            self.plan_data_loading_sql(stmt, returns_count, returns_old)
+            self.plan_data_loading_sql(stmt, returns_count)
         } else {
             self.plan_data_loading_nosql(stmt, returns_count)
         }
@@ -983,7 +981,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         &mut self,
         mut stmt: stmt::Statement,
         returns_count: bool,
-        returns_old: bool,
     ) -> Result<mir::NodeId> {
         debug_assert!(self.planner.engine.capability().sql, "stmt={stmt:#?}");
         debug_assert!(!stmt.is_insert(), "stmt={stmt:#?}");
@@ -999,11 +996,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     .iter()
                     .map(|item| item.to_expr()),
             ));
-
-            if returns_old {
-                let returning = stmt.take_returning().unwrap().into_old();
-                stmt.set_returning(returning);
-            }
         }
 
         let input_args: Vec<_> = self

@@ -485,16 +485,6 @@ impl ToSql for &stmt::OrderByExpr {
 impl ToSql for &stmt::Returning {
     fn to_sql(self, f: &mut super::Formatter<'_>) {
         match self {
-            stmt::Returning::Old(returning) => {
-                assert!(
-                    matches!(f.serializer.flavor, Flavor::Postgresql),
-                    "old values in RETURNING are only supported by PostgreSQL"
-                );
-                let returning_old = f.returning_old;
-                f.returning_old = true;
-                returning.as_ref().to_sql(f);
-                f.returning_old = returning_old;
-            }
             stmt::Returning::Project(stmt::Expr::Record(expr_record)) => {
                 // Alias every projected field positionally (`AS column1`, ...).
                 // A nested SELECT/RETURNING referenced from an outer query (e.g.
@@ -682,10 +672,7 @@ impl ToSql for &stmt::Update {
         let mut f = f.scope(self);
         f.alias = false;
 
-        let returning = self
-            .returning
-            .as_ref()
-            .map(|returning| (" RETURNING ", returning));
+        let returning = self.returning.as_ref();
 
         if returning.is_some() && f.serializer.is_mysql() {
             panic!(
@@ -703,7 +690,13 @@ impl ToSql for &stmt::Update {
             self.condition
         );
 
-        fmt!(&mut f, "UPDATE " self.target " SET " assignments self.filter returning);
+        fmt!(&mut f, "UPDATE " self.target " SET " assignments self.filter);
+
+        if let Some(returning) = returning {
+            fmt!(&mut f, " RETURNING ");
+            f.returning_old = self.returning_old;
+            returning.to_sql(&mut f);
+        }
     }
 }
 

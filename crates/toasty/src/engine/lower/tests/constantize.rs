@@ -65,6 +65,7 @@ fn document_update_returning_constantizes_only_new_values() {
         stmt::ExprContext::new_with_target(&schema, table),
         &mut returning,
         &assignments,
+        false,
     );
 
     // Lowering cast then raising cast round-trip to the positional record.
@@ -73,15 +74,14 @@ fn document_update_returning_constantizes_only_new_values() {
         Returning::Project(Expr::Value(Value::record_from_vec(vec![profile])))
     );
 
-    let expected = Returning::Old(Box::new(Returning::Project(Expr::record_from_vec(vec![
-        raising_expr,
-    ]))));
+    let expected = Returning::Project(Expr::record_from_vec(vec![raising_expr]));
     let mut returning = expected.clone();
 
     constantize_update_returning(
         stmt::ExprContext::new_with_target(&schema, table),
         &mut returning,
         &assignments,
+        true,
     );
 
     assert_eq!(returning, expected);

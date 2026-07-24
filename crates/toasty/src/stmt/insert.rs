@@ -64,7 +64,10 @@ impl<M: Model> Insert<M> {
                     .into(),
                 ]),
                 upsert: None,
-                returning: Some(stmt::Returning::Model { include: vec![] }),
+                returning: Some(stmt::Returning::Model {
+                    include: vec![],
+                    old: false,
+                }),
             },
             _p: PhantomData,
         }

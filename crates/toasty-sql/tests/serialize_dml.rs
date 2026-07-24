@@ -141,6 +141,7 @@ fn update_stmt(with_where: bool, returning: Option<Returning>) -> stmt::Statemen
         filter,
         condition: stmt::Condition::default(),
         returning,
+        returning_old: false,
     }
     .into()
 }
@@ -281,14 +282,19 @@ fn update_with_returning() {
 #[test]
 fn update_with_returning_old_postgresql() {
     let schema = users_schema();
-    let returning = Some(Returning::Project(Expr::record([col(0, 0), col(0, 1)])).into_old());
+    let returning = Some(Returning::Project(Expr::record([col(0, 0), col(0, 1)])));
+    let mut update = update_stmt(true, returning);
+    let stmt::Statement::Update(update_stmt) = &mut update else {
+        unreachable!()
+    };
+    update_stmt.returning_old = true;
     expect![[
         r#"UPDATE "users" AS tbl_0_0 SET "name" = 'b' WHERE "id" = 1 RETURNING old."id" AS column1, old."name" AS column2;"#
     ]]
     .assert_eq(&render(
         Flavor::Postgresql,
         &schema,
-        update_stmt(true, returning),
+        update,
     ));
 }
 
