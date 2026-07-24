@@ -145,7 +145,6 @@ impl Engine {
             let value_stream = match response.values {
                 Rows::Count(count) => return Ok(ExecResponse::count(count)),
                 Rows::Value(stmt::Value::List(items)) => ValueStream::from_vec(items),
-                // TODO have the public API be able to handle single rows
                 Rows::Value(value) => ValueStream::from_vec(vec![value]),
                 Rows::Stream(value_stream) => value_stream,
             };

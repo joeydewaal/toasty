@@ -187,6 +187,8 @@ impl ConnectionTask {
         in_transaction: bool,
     ) -> crate::Result<toasty_core::driver::ExecResponse> {
         let single = stmt.is_single();
+        let update_single =
+            matches!(&stmt, toasty_core::stmt::Statement::Update(update) if update.single);
         let mut response = self
             .engine
             .exec(&mut *self.connection, stmt, in_transaction)
@@ -197,12 +199,16 @@ impl ConnectionTask {
             let Rows::Value(Value::List(mut items)) = response.values else {
                 unreachable!()
             };
-            assert!(
-                items.len() <= 1,
-                "expected at most 1 row for single statement, got {}",
-                items.len()
-            );
-            response.values = Rows::Value(items.pop().unwrap_or(Value::Null));
+            if update_single {
+                response.values = Rows::Value(items.into_iter().next().unwrap_or(Value::Null));
+            } else {
+                assert!(
+                    items.len() <= 1,
+                    "expected at most 1 row for single statement, got {}",
+                    items.len()
+                );
+                response.values = Rows::Value(items.pop().unwrap_or(Value::Null));
+            }
         }
 
         Ok(response)

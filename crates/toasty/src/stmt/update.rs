@@ -6,63 +6,6 @@ use crate::{
 use std::{fmt, marker::PhantomData};
 use toasty_core::stmt;
 
-/// Return marker for the affected count of a generated query update.
-#[doc(hidden)]
-pub struct UpdateCount;
-
-impl Load for UpdateCount {
-    type Output = u64;
-
-    fn ty() -> stmt::Type {
-        stmt::Type::U64
-    }
-
-    fn load(value: stmt::Value) -> Result<Self::Output> {
-        match value {
-            stmt::Value::List(values) if values.is_empty() => Ok(0),
-            stmt::Value::List(mut values) if values.len() == 1 => values.pop().unwrap().try_into(),
-            value => value.try_into(),
-        }
-    }
-}
-
-/// Return marker for the first model returned by an update.
-#[doc(hidden)]
-pub struct UpdateFirst<M>(PhantomData<M>);
-
-impl<M: Load> Load for UpdateFirst<M> {
-    type Output = Option<M::Output>;
-
-    fn ty() -> stmt::Type {
-        M::ty()
-    }
-
-    fn load(value: stmt::Value) -> Result<Self::Output> {
-        match value {
-            stmt::Value::List(values) => values.into_iter().next().map(M::load).transpose(),
-            value => M::load(value).map(Some),
-        }
-    }
-}
-
-/// Return marker for one model returned by an update.
-#[doc(hidden)]
-pub struct UpdateOne<M>(PhantomData<M>);
-
-impl<M: Load> Load for UpdateOne<M> {
-    type Output = M::Output;
-
-    fn ty() -> stmt::Type {
-        M::ty()
-    }
-
-    fn load(value: stmt::Value) -> Result<Self::Output> {
-        UpdateFirst::<M>::load(value)?.ok_or_else(|| {
-            toasty_core::Error::record_not_found("update returned no matching records")
-        })
-    }
-}
-
 /// A typed update statement.
 ///
 /// `Update` modifies records matching a selection (typically derived from a
@@ -270,6 +213,15 @@ impl<T> Update<T> {
     #[doc(hidden)]
     pub fn with_returning<R>(mut self, returning: stmt::Returning) -> Update<R> {
         self.untyped.returning = Some(returning);
+        self.untyped.single = false;
+        Update::from_untyped(self.untyped)
+    }
+
+    /// Change the typed result to a single value.
+    #[doc(hidden)]
+    pub fn with_returning_single<R>(mut self, returning: stmt::Returning) -> Update<R> {
+        self.untyped.returning = Some(returning);
+        self.untyped.single = true;
         Update::from_untyped(self.untyped)
     }
 
@@ -351,6 +303,7 @@ impl<M: Model> Default for Update<M> {
                 filter: stmt::Filter::new(stmt::Expr::from(false)),
                 condition: stmt::Condition::default(),
                 returning: Some(stmt::Returning::Changed),
+                single: true,
             },
             _p: PhantomData,
         }

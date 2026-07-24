@@ -411,7 +411,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             Statement::Update(stmt) => stmt
                 .returning
                 .as_ref()
-                .map(|returning| cx.infer_returning_ty(returning, args, false))
+                .map(|returning| cx.infer_returning_ty(returning, args, stmt.single))
                 .unwrap_or(Type::Unit),
         }
     }

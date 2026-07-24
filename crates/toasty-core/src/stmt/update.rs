@@ -22,6 +22,7 @@ use crate::{
 ///     filter: Filter::default(),
 ///     condition: Condition::default(),
 ///     returning: None,
+///     single: false,
 /// };
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,9 @@ pub struct Update {
 
     /// Optional `RETURNING` clause.
     pub returning: Option<Returning>,
+
+    /// Whether execution returns at most one projected value.
+    pub single: bool,
 }
 
 impl Statement {

@@ -719,6 +719,7 @@ mod tests {
             filter: Filter::ALL,
             condition: Condition::default(),
             returning: Some(returning),
+            single: false,
         }
         .into()
     }

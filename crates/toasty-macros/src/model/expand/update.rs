@@ -273,15 +273,15 @@ impl Expand<'_> {
                 }
 
                 /// Return the first updated model, or `None` when no row matched.
-                #vis fn returning_first(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateFirst<#model_ident>> {
-                    self.build_update().with_returning(
+                #vis fn returning_first(mut self) -> #toasty::stmt::Update<Option<#model_ident>> {
+                    self.build_update().with_returning_single(
                         #toasty::core::stmt::Returning::Model { include: vec![], old: false },
                     )
                 }
 
                 /// Return one updated model, or a record-not-found error when no row matched.
-                #vis fn returning_one(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateOne<#model_ident>> {
-                    self.build_update().with_returning(
+                #vis fn returning_one(mut self) -> #toasty::stmt::Update<#model_ident> {
+                    self.build_update().with_returning_single(
                         #toasty::core::stmt::Returning::Model { include: vec![], old: false },
                     )
                 }
@@ -294,15 +294,15 @@ impl Expand<'_> {
                 }
 
                 /// Return the first model as it was before the update, or `None` when no row matched.
-                #vis fn returning_first_old(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateFirst<#model_ident>> {
-                    self.build_update().with_returning(
+                #vis fn returning_first_old(mut self) -> #toasty::stmt::Update<Option<#model_ident>> {
+                    self.build_update().with_returning_single(
                         #toasty::core::stmt::Returning::Model { include: vec![], old: true },
                     )
                 }
 
                 /// Return one model as it was before the update, or a record-not-found error when no row matched.
-                #vis fn returning_one_old(mut self) -> #toasty::stmt::Update<#toasty::stmt::UpdateOne<#model_ident>> {
-                    self.build_update().with_returning(
+                #vis fn returning_one_old(mut self) -> #toasty::stmt::Update<#model_ident> {
+                    self.build_update().with_returning_single(
                         #toasty::core::stmt::Returning::Model { include: vec![], old: true },
                     )
                 }
@@ -332,25 +332,31 @@ impl Expand<'_> {
 
             // Implement UpdateTarget for the generated query struct
             impl #toasty::UpdateTarget for #query_struct_ident {
-                type Returning = #toasty::List<#model_ident>;
+                type Returning = u64;
                 type Output = u64;
 
                 fn to_update_stmt(
                     &mut self,
                     assignments: #toasty::core::stmt::Assignments,
-                ) -> #toasty::stmt::Update<#toasty::List<#model_ident>> {
+                ) -> #toasty::stmt::Update<u64> {
                     let query = ::std::mem::replace(
                         &mut self.stmt,
                         #toasty::stmt::Query::all(),
                     );
-                    let mut stmt = #toasty::stmt::Update::new(query);
+                    let mut stmt = #toasty::stmt::Update::new(query)
+                        .with_returning(#toasty::core::stmt::Returning::Count);
                     stmt.set_assignments(assignments);
-                    stmt.as_untyped_mut().returning = Some(#toasty::core::stmt::Returning::Count);
                     stmt
                 }
 
                 fn apply_result(self, value: #toasty::core::stmt::Value) -> #toasty::Result<Self::Output> {
-                    <#toasty::stmt::UpdateCount as #toasty::Load>::load(value)
+                    match value {
+                        #toasty::core::stmt::Value::List(values) if values.is_empty() => Ok(0),
+                        #toasty::core::stmt::Value::List(mut values) if values.len() == 1 => {
+                            <u64 as #toasty::Load>::load(values.pop().unwrap())
+                        }
+                        value => <u64 as #toasty::Load>::load(value),
+                    }
                 }
             }
 
@@ -380,7 +386,7 @@ impl Expand<'_> {
             }
 
             impl #toasty::IntoStatement for #update_struct_ident {
-                type Returning = #toasty::stmt::UpdateCount;
+                type Returning = u64;
 
                 fn into_statement(mut self) -> #toasty::Statement<Self::Returning> {
                     #toasty::Statement::from_untyped_stmt(self.build_stmt())

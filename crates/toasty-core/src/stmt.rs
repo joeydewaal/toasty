@@ -413,11 +413,7 @@ impl Statement {
         match self {
             Statement::Query(q) => q.single,
             Statement::Insert(i) => i.source.single,
-            Statement::Update(i) => match &i.target {
-                UpdateTarget::Query(q) => q.single,
-                UpdateTarget::Model(_) => true,
-                _ => false,
-            },
+            Statement::Update(i) => i.single,
             Statement::Delete(d) => d.selection().single,
         }
     }

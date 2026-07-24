@@ -219,6 +219,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         match &mut stmt {
             stmt::Statement::Query(stmt) => stmt.single = false,
             stmt::Statement::Insert(stmt) => stmt.source.single = false,
+            stmt::Statement::Update(stmt) => stmt.single = false,
             _ => {}
         }
 

@@ -147,6 +147,7 @@ impl Query {
         };
 
         assert!(select.source.is_model());
+        let single = self.single;
 
         stmt::Update {
             target: UpdateTarget::Query(Box::new(self)),
@@ -154,6 +155,7 @@ impl Query {
             filter: Filter::default(),
             condition: stmt::Condition::default(),
             returning: None,
+            single,
         }
     }
 
