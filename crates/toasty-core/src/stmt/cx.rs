@@ -577,26 +577,11 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             Expr::Func(ExprFunc::Count(_)) => Type::U64,
             Expr::Func(ExprFunc::LastInsertId(_)) => Type::I64,
             Expr::Func(ExprFunc::JsonExtract(func)) => func.ty.clone(),
-            Expr::Incoming(incoming) => match incoming {
-                super::ExprIncoming::Model(model) => Type::Model(*model),
-                super::ExprIncoming::Table(table) => {
+            Expr::Row(row) => match row {
+                super::ExprRow::Model { model, .. } => Type::Model(*model),
+                super::ExprRow::Table { table, .. } => {
                     let table = self.schema.table(*table).unwrap_or_else(|| {
-                        panic!("incoming table {table:?} is not present in the schema")
-                    });
-                    Type::Record(
-                        table
-                            .columns
-                            .iter()
-                            .map(|column| column.ty.clone())
-                            .collect(),
-                    )
-                }
-            },
-            Expr::Mutation(mutation) => match mutation {
-                super::ExprMutation::Model { model, .. } => Type::Model(*model),
-                super::ExprMutation::Table { table, .. } => {
-                    let table = self.schema.table(*table).unwrap_or_else(|| {
-                        panic!("mutation table {table:?} is not present in the schema")
+                        panic!("row table {table:?} is not present in the schema")
                     });
                     Type::Record(
                         table

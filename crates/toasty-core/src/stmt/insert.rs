@@ -90,8 +90,9 @@ pub struct Upsert {
     /// Assignments applied only when the target matches an existing record.
     ///
     /// These override shared assignments for the same field and may reference
-    /// stored columns or fields projected from
-    /// [`ExprIncoming`](super::ExprIncoming), the row proposed by the insert source.
+    /// stored columns or fields projected from an
+    /// [`ExprRow`](super::ExprRow) with [`RowImage::Incoming`](super::RowImage),
+    /// the row proposed by the insert source.
     pub update: Assignments,
 
     /// Whether to update or ignore a conflicting row.

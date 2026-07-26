@@ -3,14 +3,14 @@
 use super::{
     Assignment, Assignments, Association, Condition, Cte, Delete, Expr, ExprAllOp, ExprAnd,
     ExprAny, ExprAnyOp, ExprArg, ExprBetween, ExprBinaryOp, ExprCast, ExprColumn, ExprError,
-    ExprExists, ExprFunc, ExprInList, ExprInSubquery, ExprIncoming, ExprIntersects, ExprIsNull,
-    ExprIsSuperset, ExprIsVariant, ExprLength, ExprLet, ExprLike, ExprList, ExprMap, ExprMatch,
-    ExprMutation, ExprNot, ExprOr, ExprProject, ExprRecord, ExprReference, ExprSet, ExprSetOp,
-    ExprStartsWith, ExprStmt, Filter, FuncCount, FuncJsonExtract, FuncLastInsertId, Include,
-    Insert, InsertTarget, Join, JoinOp, Limit, LimitCursor, LimitOffset, Node, OrderBy,
-    OrderByExpr, Path, Projection, Query, Returning, Select, Source, SourceModel, SourceTable,
-    SourceTableId, Statement, TableDerived, TableFactor, TableRef, TableWithJoins, Type, Update,
-    UpdateTarget, Value, ValueRecord, Values, With,
+    ExprExists, ExprFunc, ExprInList, ExprInSubquery, ExprIntersects, ExprIsNull, ExprIsSuperset,
+    ExprIsVariant, ExprLength, ExprLet, ExprLike, ExprList, ExprMap, ExprMatch, ExprNot, ExprOr,
+    ExprProject, ExprRecord, ExprReference, ExprRow, ExprSet, ExprSetOp, ExprStartsWith, ExprStmt,
+    Filter, FuncCount, FuncJsonExtract, FuncLastInsertId, Include, Insert, InsertTarget, Join,
+    JoinOp, Limit, LimitCursor, LimitOffset, Node, OrderBy, OrderByExpr, Path, Projection, Query,
+    Returning, Select, Source, SourceModel, SourceTable, SourceTableId, Statement, TableDerived,
+    TableFactor, TableRef, TableWithJoins, Type, Update, UpdateTarget, Value, ValueRecord, Values,
+    With,
 };
 
 /// Mutable visitor trait for the statement AST.
@@ -206,16 +206,11 @@ pub trait VisitMut {
         visit_expr_in_subquery_mut(self, i);
     }
 
-    /// Visits an [`ExprIncoming`] node mutably.
+    /// Visits an [`ExprRow`] node mutably.
     ///
-    /// The default implementation delegates to [`visit_expr_incoming_mut`].
-    fn visit_expr_incoming_mut(&mut self, i: &mut ExprIncoming) {
-        visit_expr_incoming_mut(self, i);
-    }
-
-    /// Visits an [`ExprMutation`] node mutably.
-    fn visit_expr_mutation_mut(&mut self, i: &mut ExprMutation) {
-        visit_expr_mutation_mut(self, i);
+    /// The default implementation delegates to [`visit_expr_row_mut`].
+    fn visit_expr_row_mut(&mut self, i: &mut ExprRow) {
+        visit_expr_row_mut(self, i);
     }
 
     /// Visits an [`ExprIntersects`] node mutably.
@@ -668,12 +663,8 @@ impl<V: VisitMut> VisitMut for &mut V {
         VisitMut::visit_expr_in_subquery_mut(&mut **self, i);
     }
 
-    fn visit_expr_incoming_mut(&mut self, i: &mut ExprIncoming) {
-        VisitMut::visit_expr_incoming_mut(&mut **self, i);
-    }
-
-    fn visit_expr_mutation_mut(&mut self, i: &mut ExprMutation) {
-        VisitMut::visit_expr_mutation_mut(&mut **self, i);
+    fn visit_expr_row_mut(&mut self, i: &mut ExprRow) {
+        VisitMut::visit_expr_row_mut(&mut **self, i);
     }
 
     fn visit_expr_intersects_mut(&mut self, i: &mut ExprIntersects) {
@@ -956,8 +947,7 @@ where
         Expr::Ident(_) => {}
         Expr::InList(expr) => v.visit_expr_in_list_mut(expr),
         Expr::InSubquery(expr) => v.visit_expr_in_subquery_mut(expr),
-        Expr::Incoming(expr) => v.visit_expr_incoming_mut(expr),
-        Expr::Mutation(expr) => v.visit_expr_mutation_mut(expr),
+        Expr::Row(expr) => v.visit_expr_row_mut(expr),
         Expr::Intersects(expr) => v.visit_expr_intersects_mut(expr),
         Expr::IsNull(expr) => v.visit_expr_is_null_mut(expr),
         Expr::IsSuperset(expr) => v.visit_expr_is_superset_mut(expr),
@@ -1083,15 +1073,8 @@ where
     }
 }
 
-/// Default mutable traversal for [`ExprIncoming`] nodes. This is a leaf node with no children to visit.
-pub fn visit_expr_incoming_mut<V>(_v: &mut V, _node: &mut ExprIncoming)
-where
-    V: VisitMut + ?Sized,
-{
-}
-
-/// Default mutable traversal for [`ExprMutation`] nodes. This is a leaf node.
-pub fn visit_expr_mutation_mut<V>(_v: &mut V, _node: &mut ExprMutation)
+/// Default mutable traversal for [`ExprRow`] nodes. This is a leaf node with no children to visit.
+pub fn visit_expr_row_mut<V>(_v: &mut V, _node: &mut ExprRow)
 where
     V: VisitMut + ?Sized,
 {

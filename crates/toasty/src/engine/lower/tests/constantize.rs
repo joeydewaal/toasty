@@ -4,7 +4,7 @@ use crate as toasty;
 use crate::engine::lower::returning::constantize_update_returning;
 use crate::engine::test_util::test_schema_with;
 use crate::schema::{Embed, Model};
-use toasty_core::stmt::{self, Expr, ExprMutation, Returning, Value};
+use toasty_core::stmt::{self, Expr, ExprRow, Returning, RowImage, Value};
 
 #[derive(Debug, PartialEq, toasty::Embed)]
 struct Profile {
@@ -79,7 +79,10 @@ fn document_update_returning_constantizes_only_new_values() {
 
     let expected = Returning::Project {
         expr: Expr::record([
-            Expr::project(ExprMutation::old_table(column_id.table), [column_id.index]),
+            Expr::project(
+                ExprRow::table(column_id.table, RowImage::Old),
+                [column_id.index],
+            ),
             raising_expr,
         ]),
     };

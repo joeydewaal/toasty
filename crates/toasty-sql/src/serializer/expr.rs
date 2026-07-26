@@ -39,45 +39,33 @@ impl ToSql for &stmt::Expr {
             stmt::Expr::Func(stmt::ExprFunc::JsonExtract(func)) => {
                 serialize_json_extract(f, func);
             }
-            stmt::Expr::Project(project)
-                if let stmt::Expr::Incoming(incoming) = project.base.as_ref() =>
-            {
-                let stmt::ExprIncoming::Table(table) = incoming else {
-                    panic!("incoming projection was not lowered")
+            stmt::Expr::Project(project) if let stmt::Expr::Row(row) = project.base.as_ref() => {
+                let stmt::ExprRow::Table { table, image } = row else {
+                    panic!("row projection was not lowered")
                 };
                 let [column] = project.projection.as_slice() else {
-                    panic!("lowered incoming projection must reference one column")
+                    panic!("lowered row projection must reference one column")
                 };
-                let column = ColumnId {
+                let name = f.serializer.column_name(ColumnId {
                     table: *table,
                     index: *column,
-                };
-                fmt!(f, "excluded." f.serializer.column_name(column));
-            }
-            stmt::Expr::Project(project)
-                if let stmt::Expr::Mutation(mutation) = project.base.as_ref() =>
-            {
-                let stmt::ExprMutation::Table { table, image } = mutation else {
-                    panic!("mutation projection was not lowered")
-                };
-                let [column] = project.projection.as_slice() else {
-                    panic!("lowered mutation projection must reference one column")
-                };
-                let column = ColumnId {
-                    table: *table,
-                    index: *column,
-                };
-                let name = f.serializer.column_name(column);
-                match (&f.serializer.flavor, image) {
-                    (Flavor::Postgresql, stmt::MutationImage::Old) => fmt!(f, "old." name),
-                    (_, stmt::MutationImage::New) => fmt!(f, name),
-                    (_, stmt::MutationImage::Old) => {
-                        panic!("old mutation rows are only supported by PostgreSQL")
-                    }
+                });
+                // Neither qualifier is flavor-gated here. `excluded` and `old`
+                // are PostgreSQL/SQLite and PostgreSQL 18+ syntax respectively,
+                // but a backend that lacks either never reaches this point:
+                // `engine::verify` rejects the statement first, on the
+                // `upsert_*` flags for a proposed row and on
+                // `update_returning_old` for a pre-update row. The surrounding
+                // `ON CONFLICT` clause is unconditional for the same reason.
+                match image {
+                    stmt::RowImage::Incoming => fmt!(f, "excluded." name),
+                    // The post-update image is the statement's own row, so it
+                    // needs no qualifier.
+                    stmt::RowImage::New => fmt!(f, name),
+                    stmt::RowImage::Old => fmt!(f, "old." name),
                 }
             }
-            stmt::Expr::Incoming(_) => panic!("incoming row must be projected"),
-            stmt::Expr::Mutation(_) => panic!("mutation row must be projected"),
+            stmt::Expr::Row(_) => panic!("statement-supplied row must be projected"),
             stmt::Expr::IsSuperset(e) => match f.serializer.flavor {
                 Flavor::Postgresql => fmt!(f, e.lhs.as_ref() " @> " e.rhs.as_ref()),
                 // The rhs Value::List is bound as one JSON string. MySQL's

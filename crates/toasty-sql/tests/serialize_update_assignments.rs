@@ -16,8 +16,8 @@ use expect_test::expect;
 use toasty_core::{
     schema::db::{Column, ColumnId, PrimaryKey, Schema, Table, TableId, Type as StorageType},
     stmt::{
-        self, Assignments, Expr, ExprColumn, ExprIncoming, Filter, Insert, InsertTable,
-        InsertTarget, Update, UpdateTarget, Values,
+        self, Assignments, Expr, ExprColumn, ExprRow, Filter, Insert, InsertTable, InsertTarget,
+        Update, UpdateTarget, Values,
     },
 };
 use toasty_sql::{Serializer, Statement as SqlStatement};
@@ -262,7 +262,10 @@ fn upsert_incoming_projection_postgresql() {
     let mut assignments = Assignments::default();
     assignments.set(
         1usize,
-        Expr::project(ExprIncoming::table(TableId(0)), [1usize]),
+        Expr::project(
+            ExprRow::table(TableId(0), stmt::RowImage::Incoming),
+            [1usize],
+        ),
     );
 
     expect![[r#"INSERT INTO "users" ("id", "name", "tags") VALUES (1, 'a', (7)) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name";"#]].assert_eq(&render(

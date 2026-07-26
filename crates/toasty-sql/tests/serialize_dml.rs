@@ -9,7 +9,7 @@ use expect_test::expect;
 use toasty_core::{
     schema::db::{Column, ColumnId, PrimaryKey, Schema, Table, TableId, Type as StorageType},
     stmt::{
-        self, Assignments, Delete, Expr, ExprColumn, ExprMutation, Filter, Insert, InsertTable,
+        self, Assignments, Delete, Expr, ExprColumn, ExprRow, Filter, Insert, InsertTable,
         InsertTarget, Returning, Source, Update, UpdateTarget, Values,
     },
 };
@@ -290,8 +290,8 @@ fn update_with_returning_old_postgresql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([
-            Expr::project(ExprMutation::old_table(TableId(0)), [0usize]),
-            Expr::project(ExprMutation::old_table(TableId(0)), [1usize]),
+            Expr::project(ExprRow::table(TableId(0), stmt::RowImage::Old), [0usize]),
+            Expr::project(ExprRow::table(TableId(0), stmt::RowImage::Old), [1usize]),
         ]),
     });
     let update = update_stmt(true, returning);
@@ -310,8 +310,8 @@ fn update_with_returning_old_and_new_postgresql() {
     let schema = users_schema();
     let returning = Some(Returning::Project {
         expr: Expr::record([
-            Expr::project(ExprMutation::old_table(TableId(0)), [1usize]),
-            Expr::project(ExprMutation::new_table(TableId(0)), [1usize]),
+            Expr::project(ExprRow::table(TableId(0), stmt::RowImage::Old), [1usize]),
+            Expr::project(ExprRow::table(TableId(0), stmt::RowImage::New), [1usize]),
         ]),
     });
 

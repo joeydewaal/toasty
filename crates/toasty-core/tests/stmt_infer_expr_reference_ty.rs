@@ -1,5 +1,5 @@
 //! Type-inference tests for row and field references. These cover all three
-//! `ExprReference` variants and fields projected from `Expr::Incoming` before
+//! `ExprReference` variants and fields projected from `Expr::Row` before
 //! and after lowering.
 
 use toasty_core::schema::Name;
@@ -13,7 +13,7 @@ use toasty_core::schema::db::{
     Column, ColumnId, IndexId as DbIndexId, PrimaryKey as DbPrimaryKey, Schema, Table, TableId,
 };
 use toasty_core::stmt::{
-    Expr, ExprColumn, ExprContext, ExprIncoming, ExprReference, ExprTarget, Type,
+    Expr, ExprColumn, ExprContext, ExprReference, ExprRow, ExprTarget, RowImage, Type,
 };
 
 // ---------------------------------------------------------------------------
@@ -299,7 +299,7 @@ fn model_ref_nesting1_resolves_from_parent() {
 }
 
 // ---------------------------------------------------------------------------
-// Expr::Project(Expr::Incoming, projection)
+// Expr::Project(Expr::Row, projection)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -311,7 +311,7 @@ fn incoming_model_projection_uses_field_type() {
     .unwrap();
     let model = schema.model(ModelId(0)).as_root_unwrap();
     let cx = ExprContext::new_with_target(&schema, model);
-    let expr = Expr::project(ExprIncoming::model(ModelId(0)), [1usize]);
+    let expr = Expr::project(ExprRow::model(ModelId(0), RowImage::Incoming), [1usize]);
 
     assert_eq!(cx.infer_expr_ty(&expr, &[]), Type::String);
 }
@@ -319,7 +319,7 @@ fn incoming_model_projection_uses_field_type() {
 #[test]
 fn incoming_table_projection_uses_column_type() {
     let schema = db_schema(&[(Type::I64, "id"), (Type::String, "name")]);
-    let expr = Expr::project(ExprIncoming::table(TableId(0)), [1usize]);
+    let expr = Expr::project(ExprRow::table(TableId(0), RowImage::Incoming), [1usize]);
 
     assert_eq!(table_cx(&schema).infer_expr_ty(&expr, &[]), Type::String);
 }

@@ -442,11 +442,8 @@ impl Expr {
             Expr::Func(_) => Err(crate::Error::expression_evaluation_failed(
                 "database functions cannot be evaluated client-side",
             )),
-            Expr::Incoming(_) => Err(crate::Error::expression_evaluation_failed(
-                "incoming values can only be evaluated by the database",
-            )),
-            Expr::Mutation(_) => Err(crate::Error::expression_evaluation_failed(
-                "mutation rows can only be evaluated by the database",
+            Expr::Row(_) => Err(crate::Error::expression_evaluation_failed(
+                "statement-supplied rows can only be evaluated by the database",
             )),
             _ => todo!("expr={self:#?}"),
         }

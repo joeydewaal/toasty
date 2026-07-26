@@ -1,5 +1,5 @@
 use super::{Expr, Include};
-use crate::stmt::{self, ExprSet, MutationImage, Node, Query, Statement, Visit};
+use crate::stmt::{self, ExprSet, Node, Query, RowImage, Statement, Visit};
 
 /// Specifies what data a statement returns.
 ///
@@ -109,31 +109,36 @@ impl Returning {
 
     /// Returns `true` when this clause requests a pre-mutation model.
     pub fn is_old(&self) -> bool {
-        self.uses_image(MutationImage::Old)
+        self.uses_image(RowImage::Old)
     }
 
     /// Returns `true` when this clause reads post-mutation values.
     pub fn uses_new(&self) -> bool {
-        self.uses_image(MutationImage::New)
+        self.uses_image(RowImage::New)
     }
 
-    fn uses_image(&self, image: MutationImage) -> bool {
+    fn uses_image(&self, image: RowImage) -> bool {
         match self {
             Self::Model { old, .. } => {
-                return (*old && image == MutationImage::Old)
-                    || (!*old && image == MutationImage::New);
+                return match image {
+                    RowImage::Old => *old,
+                    RowImage::New => !*old,
+                    // A model returning clause never reads an upsert's
+                    // proposed row.
+                    RowImage::Incoming => false,
+                };
             }
             Self::Changed | Self::Count | Self::Expr(_) => return false,
             Self::Project { .. } => {}
         }
 
         struct FindImage {
-            image: MutationImage,
+            image: RowImage,
             found: bool,
         }
 
         impl Visit for FindImage {
-            fn visit_expr_mutation(&mut self, expr: &stmt::ExprMutation) {
+            fn visit_expr_row(&mut self, expr: &stmt::ExprRow) {
                 self.found |= expr.image() == self.image;
             }
         }

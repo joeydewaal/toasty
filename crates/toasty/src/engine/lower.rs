@@ -31,22 +31,19 @@ use toasty_core::{
 
 use crate::engine::{Engine, HirStatement, hir, simplify::Simplify, upsert};
 
-struct QualifyMutation {
+/// Rewrites unqualified references in an update's returning clause into
+/// projections out of a specific row image, so the serializer knows whether to
+/// read the pre- or post-update value.
+struct QualifyRowImage {
     model: app::ModelId,
     table: toasty_core::schema::db::TableId,
-    image: stmt::MutationImage,
+    image: stmt::RowImage,
 }
 
-impl VisitMut for QualifyMutation {
+impl VisitMut for QualifyRowImage {
     fn visit_expr_mut(&mut self, expr: &mut stmt::Expr) {
         if let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = expr {
-            *expr = stmt::Expr::project(
-                stmt::ExprMutation::Model {
-                    model: self.model,
-                    image: self.image,
-                },
-                [*index],
-            );
+            *expr = stmt::Expr::project(stmt::ExprRow::model(self.model, self.image), [*index]);
             return;
         }
 
@@ -54,10 +51,7 @@ impl VisitMut for QualifyMutation {
             && column.nesting == 0
         {
             *expr = stmt::Expr::project(
-                stmt::ExprMutation::Table {
-                    table: self.table,
-                    image: self.image,
-                },
+                stmt::ExprRow::table(self.table, self.image),
                 [column.column],
             );
             return;
@@ -845,53 +839,24 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
             }
             stmt::Expr::Project(project)
-                if let stmt::Expr::Incoming(stmt::ExprIncoming::Model(model)) =
+                if let stmt::Expr::Row(stmt::ExprRow::Model { model, image }) =
                     project.base.as_ref() =>
             {
                 let (table, column) = {
                     let mapping = self.schema().mapping_for(*model);
                     let mapped = mapping
                         .resolve_field_mapping(&project.projection)
-                        .expect("incoming upsert field must map to a column");
+                        .expect("row field must map to a column");
                     let mut columns = mapped.columns();
-                    let (column, _) = columns
-                        .next()
-                        .expect("incoming upsert field has no database column");
+                    let (column, _) = columns.next().expect("row field has no database column");
                     assert!(
                         columns.next().is_none(),
-                        "incoming() does not yet support column-expanded embedded fields"
+                        "row projections do not support column-expanded embedded fields"
                     );
                     (mapping.table, column)
                 };
                 debug_assert_eq!(table, column.table);
-                *project.base = stmt::ExprIncoming::table(table).into();
-                project.projection = stmt::Projection::from_index(column.index);
-            }
-            stmt::Expr::Project(project)
-                if let stmt::Expr::Mutation(stmt::ExprMutation::Model { model, image }) =
-                    project.base.as_ref() =>
-            {
-                let (table, column) = {
-                    let mapping = self.schema().mapping_for(*model);
-                    let mapped = mapping
-                        .resolve_field_mapping(&project.projection)
-                        .expect("mutation row field must map to a column");
-                    let mut columns = mapped.columns();
-                    let (column, _) = columns
-                        .next()
-                        .expect("mutation row field has no database column");
-                    assert!(
-                        columns.next().is_none(),
-                        "mutation row projections do not support column-expanded embedded fields"
-                    );
-                    (mapping.table, column)
-                };
-                debug_assert_eq!(table, column.table);
-                *project.base = stmt::ExprMutation::Table {
-                    table,
-                    image: *image,
-                }
-                .into();
+                *project.base = stmt::ExprRow::table(table, *image).into();
                 project.projection = stmt::Projection::from_index(column.index);
             }
             // A null-check on an `Option<Embed>` field reduces to a null-check on
@@ -1123,13 +1088,13 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
             if matches!(self.cx, LoweringContext::Update) {
-                QualifyMutation {
+                QualifyRowImage {
                     model: self.mapping_unwrap().id,
                     table: self.mapping_unwrap().table,
                     image: if old {
-                        stmt::MutationImage::Old
+                        stmt::RowImage::Old
                     } else {
-                        stmt::MutationImage::New
+                        stmt::RowImage::New
                     },
                 }
                 .visit_expr_mut(&mut returning);
@@ -1686,7 +1651,7 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
             | LoweringContext::Insert(..) => {
                 // Upsert update assignments are visited in the surrounding
                 // Insert context. Their field references read the stored row;
-                // proposed-row values use Expr::Incoming instead. Inserted
+                // proposed-row values use an incoming Expr::Row instead. Inserted
                 // value rows use the separate InsertRow branch below.
                 let mapping = self.mapping_at_unwrap(nesting);
                 mapping.table_to_model.lower_expr_reference(nesting, index)

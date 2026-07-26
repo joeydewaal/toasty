@@ -414,20 +414,20 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     false
                 }
                 stmt::Expr::Project(project) if is_returning_projection => {
-                    let stmt::Expr::Mutation(stmt::ExprMutation::Table { table, image }) =
+                    let stmt::Expr::Row(stmt::ExprRow::Table { table, image }) =
                         project.base.as_ref()
                     else {
                         return true;
                     };
                     let [column] = project.projection.as_slice() else {
-                        panic!("mutation row projection must reference one column")
+                        panic!("row projection must reference one column")
                     };
                     let selected = self
                         .stmt_info
                         .load_data_select_items
                         .get()
                         .unwrap()
-                        .get_index_of_mutation_column(*table, *column, *image);
+                        .get_index_of_row_column(*table, *column, *image);
                     let (position, _) = inputs.insert_full(load_data_node_id);
                     *expr = stmt::Expr::arg_project(position, [selected]);
                     false
@@ -481,21 +481,18 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 self.load_data.select_items.insert((*expr_reference).into());
             }
             stmt::Expr::Project(project) => {
-                let stmt::Expr::Mutation(stmt::ExprMutation::Table { table, image }) =
-                    project.base.as_ref()
+                let stmt::Expr::Row(stmt::ExprRow::Table { table, image }) = project.base.as_ref()
                 else {
                     return;
                 };
                 let [column] = project.projection.as_slice() else {
-                    panic!("mutation row projection must reference one column")
+                    panic!("row projection must reference one column")
                 };
-                self.load_data
-                    .select_items
-                    .insert(SelectItem::MutationColumn {
-                        table: *table,
-                        column: *column,
-                        image: *image,
-                    });
+                self.load_data.select_items.insert(SelectItem::RowColumn {
+                    table: *table,
+                    column: *column,
+                    image: *image,
+                });
             }
             stmt::Expr::Func(stmt::ExprFunc::Count(stmt::FuncCount { arg: None, .. })) => {
                 self.load_data.select_items.insert(SelectItem::CountStar);
@@ -855,11 +852,11 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     let stmt::Expr::Project(project) = expr else {
                         return;
                     };
-                    if !matches!(project.base.as_ref(), stmt::Expr::Mutation(_)) {
+                    if !matches!(project.base.as_ref(), stmt::Expr::Row(_)) {
                         return;
                     }
                     let [column] = project.projection.as_slice() else {
-                        panic!("mutation row projection must reference one column")
+                        panic!("row projection must reference one column")
                     };
                     *expr = stmt::ExprColumn {
                         nesting: 0,
@@ -869,7 +866,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     .into();
                 });
             }
-            self.load_data.select_items.unqualify_mutation_columns();
+            self.load_data.select_items.unqualify_row_columns();
             stmt = stmt::Query::new_select(
                 stmt::Source::table(update.target.as_table_unwrap()),
                 update.filter,
