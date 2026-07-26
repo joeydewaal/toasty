@@ -193,7 +193,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     fn plan(&mut self, mut stmt: stmt::Statement) -> Result<()> {
         let mut returning = stmt.take_returning();
-        let returns_old = returning.as_ref().is_some_and(stmt::Returning::is_old);
+        let returns_old = returning.as_ref().is_some_and(stmt::Returning::uses_old);
         self.returns_old = returns_old;
         // For single VALUES queries (e.g., batch queries), the VALUES body is
         // the output expression. Extract it as a returning value so the planner
@@ -288,7 +288,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     ) -> IndexSet<mir::NodeId> {
         let mut inputs = IndexSet::new();
 
-        let is_returning_projection = matches!(returning, Some(stmt::Returning::Project { .. }));
+        let is_returning_projection = matches!(returning, Some(stmt::Returning::Project(..)));
         debug_assert!(
             is_returning_projection
                 || matches!(
@@ -298,7 +298,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         );
 
         match returning {
-            Some(stmt::Returning::Project { expr, .. }) | Some(stmt::Returning::Expr(expr)) => {
+            Some(stmt::Returning::Project(expr)) | Some(stmt::Returning::Expr(expr)) => {
                 self.rewrite_returning_inputs(
                     expr,
                     &mut inputs,
@@ -687,9 +687,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         assert!(tables.len() <= 1, "TODO: handle more complicated cases");
 
         let sub_query = stmt::Select {
-            returning: stmt::Returning::Project {
-                expr: stmt::Expr::record([1]),
-            },
+            returning: stmt::Returning::Project(stmt::Expr::record([1])),
             source: stmt::Source::Table(stmt::SourceTable {
                 tables,
                 from: vec![stmt::TableWithJoins {
@@ -847,7 +845,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             // Relation lowering can consume every root assignment. Model returns
             // still read the selected roots after the relation mutations finish.
             let update = stmt.into_update_unwrap();
-            if let Some(stmt::Returning::Project { expr }) = returning {
+            if let Some(stmt::Returning::Project(expr)) = returning {
                 stmt::visit_mut::for_each_expr_mut(expr, |expr| {
                     let stmt::Expr::Project(project) = expr else {
                         return;
@@ -879,7 +877,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         if !self.planner.engine.capability().sql
             && returning
                 .as_ref()
-                .is_some_and(|returning| returning.is_old() && returning.uses_new())
+                .is_some_and(|returning| returning.uses_old() && returning.uses_new())
         {
             return Err(toasty_core::Error::unsupported_feature(format!(
                 "{} does not support returning old and new values from one update",
@@ -1057,14 +1055,12 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         // Set returning clause with all columns (including added ORDER BY columns)
         if !self.load_data.select_items.is_empty() {
-            stmt.set_returning(stmt::Returning::Project {
-                expr: stmt::Expr::record(
-                    self.load_data
-                        .select_items
-                        .iter()
-                        .map(|item| item.to_expr()),
-                ),
-            });
+            stmt.set_returning(stmt::Returning::Project(stmt::Expr::record(
+                self.load_data
+                    .select_items
+                    .iter()
+                    .map(|item| item.to_expr()),
+            )));
         }
 
         let input_args: Vec<_> = self
@@ -1314,9 +1310,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 }
                 .into(),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project {
-                    expr: conditional_probe_projection(cte_column(0, 0)),
-                },
+                returning: stmt::Returning::Project(conditional_probe_projection(cte_column(0, 0))),
                 distinct: false,
             })
             .build(),
@@ -1333,20 +1327,18 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             }
             .into(),
             filter: true.into(),
-            returning: stmt::Returning::Project {
-                expr: stmt::Expr::record_from_vec(vec![stmt::Expr::eq(
-                    stmt::ExprColumn {
-                        nesting: 0,
-                        table: 0,
-                        column: 0,
-                    },
-                    stmt::ExprColumn {
-                        nesting: 0,
-                        table: 0,
-                        column: 1,
-                    },
-                )]),
-            },
+            returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![stmt::Expr::eq(
+                stmt::ExprColumn {
+                    nesting: 0,
+                    table: 0,
+                    column: 0,
+                },
+                stmt::ExprColumn {
+                    nesting: 0,
+                    table: 0,
+                    column: 1,
+                },
+            )])),
             distinct: false,
         });
         // The write applies only when the two counts agree — AND that guard
@@ -1363,10 +1355,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         // just reports how many rows it touched. Only an UPDATE reads columns
         // back — a DELETE never has a returning.
         let returning_len = match write.returning() {
-            Some(stmt::Returning::Project {
-                expr: stmt::Expr::Record(record),
-                ..
-            }) => record.fields.len(),
+            Some(stmt::Returning::Project(stmt::Expr::Record(record), ..)) => record.fields.len(),
             Some(returning) => todo!("unexpected conditional write returning={returning:#?}"),
             None => 0,
         };
@@ -1392,9 +1381,10 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 }
                 .into(),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project {
-                    expr: stmt::Expr::record_from_vec(vec![cte_column(0, 0), cte_column(0, 1)]),
-                },
+                returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![
+                    cte_column(0, 0),
+                    cte_column(0, 1),
+                ])),
                 distinct: false,
             })
         } else {
@@ -1428,9 +1418,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     },
                 ),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project {
-                    expr: stmt::Expr::record_from_vec(columns),
-                },
+                returning: stmt::Returning::Project(stmt::Expr::record_from_vec(columns)),
                 distinct: false,
             })
         };
@@ -2088,9 +2076,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         node_id
                     }
                 }
-                stmt::Returning::Project {
-                    expr: projection, ..
-                } => {
+                stmt::Returning::Project(projection) => {
                     if let Some(position) = returning.inputs.get_index_of(&data_load_node_id) {
                         self.insert_mir_with_deps(mir::Eval {
                             inputs: returning.inputs,
@@ -2210,9 +2196,7 @@ fn conditional_probe_query(
     stmt::Query::builder(stmt::Select {
         source,
         filter: stmt::Filter::new(filter),
-        returning: stmt::Returning::Project {
-            expr: stmt::Expr::record_from_vec(vec![condition]),
-        },
+        returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![condition])),
         distinct: false,
     })
     .locks(if lock {

@@ -323,9 +323,7 @@ impl LowerStatement<'_, '_> {
                 let stmt::ExprSet::Select(select) = &mut query.body else {
                     todo!()
                 };
-                select.returning = stmt::Returning::Project {
-                    expr: stmt::Expr::record([1]),
-                };
+                select.returning = stmt::Returning::Project(stmt::Expr::record([1]));
                 query
             }));
         }
@@ -572,15 +570,13 @@ impl LowerStatement<'_, '_> {
 
                 // Previous value of returning does nothing in this
                 // context
-                insert.returning = Some(stmt::Returning::Project {
-                    expr: stmt::Expr::record(
-                        belongs_to
-                            .foreign_key
-                            .fields
-                            .iter()
-                            .map(|fk_field| stmt::Expr::ref_self_field(fk_field.target)),
-                    ),
-                });
+                insert.returning = Some(stmt::Returning::Project(stmt::Expr::record(
+                    belongs_to
+                        .foreign_key
+                        .fields
+                        .iter()
+                        .map(|fk_field| stmt::Expr::ref_self_field(fk_field.target)),
+                )));
 
                 let target_id = self.new_dependency(insert);
                 let stmt_info = &self.state.hir[target_id];
@@ -837,11 +833,7 @@ impl RelationSource for UpdateRelationSource<'_> {
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
         debug_assert!(self.returning_changed);
 
-        let Some(stmt::Returning::Project {
-            expr: stmt::Expr::Cast(expr_cast),
-            ..
-        }) = self.returning
-        else {
+        let Some(stmt::Returning::Project(stmt::Expr::Cast(expr_cast), ..)) = self.returning else {
             todo!("UpdateRelationSource={self:#?}")
         };
 
@@ -896,10 +888,7 @@ impl RelationSource for InsertRelationSource<'_> {
 
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
         let record = match self.returning {
-            Some(stmt::Returning::Project {
-                expr: stmt::Expr::Record(record),
-                ..
-            }) => record,
+            Some(stmt::Returning::Project(stmt::Expr::Record(record), ..)) => record,
             Some(stmt::Returning::Expr(stmt::Expr::List(rows))) => {
                 rows.items[self.index].as_record_mut_unwrap()
             }

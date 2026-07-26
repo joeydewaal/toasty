@@ -143,7 +143,7 @@ impl LowerStatement<'_, '_> {
         source: &stmt::Query,
     ) {
         match returning {
-            stmt::Returning::Project { expr: project, .. } => {
+            stmt::Returning::Project(project) => {
                 if let Some(xformed_returning) =
                     self.constantize_insert_returning_projection(project, source)
                 {
@@ -361,7 +361,7 @@ pub(super) fn constantize_update_returning(
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
 ) {
-    if returning.is_old() {
+    if returning.uses_old() {
         return;
     }
 

@@ -169,10 +169,7 @@ fn belongs_to_has_many_fuses_to_direct_fk() {
     assert_eq!(select.source.model_id_unwrap(), s.post_model);
 
     // Projects the FK column (Post.user_id), not Post's PK.
-    let Returning::Project {
-        expr: returning, ..
-    } = &select.returning
-    else {
+    let Returning::Project(returning) = &select.returning else {
         panic!("expected Returning::Project, got {:?}", select.returning);
     };
     let Expr::Reference(stmt::ExprReference::Field {

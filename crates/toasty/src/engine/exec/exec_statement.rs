@@ -429,7 +429,7 @@ impl Exec<'_> {
 
         // Extract the expression from the RETURNING clause and replace ExprReference with ExprArg
         let mut returning_expr = match returning {
-            stmt::Returning::Project { expr, .. } => expr,
+            stmt::Returning::Project(expr) => expr,
             _ => panic!(
                 "MySQL INSERT with RETURNING must have an Expr, got: {:#?}",
                 returning

@@ -528,9 +528,7 @@ impl<M: Model> Query<List<M>> {
     /// ```
     pub fn count(mut self) -> Query<u64> {
         // Set the returning clause to COUNT(*)
-        *self.untyped.returning_mut_unwrap() = Returning::Project {
-            expr: stmt::Expr::count_star(),
-        };
+        *self.untyped.returning_mut_unwrap() = Returning::Project(stmt::Expr::count_star());
         self.untyped.single = true;
 
         Query::from_untyped(self.untyped)
@@ -586,9 +584,7 @@ impl<M: Model> Query<List<M>> {
         E: IntoExpr<T>,
         T: Load,
     {
-        *self.untyped.returning_mut_unwrap() = Returning::Project {
-            expr: projection.into_expr().untyped,
-        };
+        *self.untyped.returning_mut_unwrap() = Returning::Project(projection.into_expr().untyped);
 
         Query::from_untyped(self.untyped)
     }

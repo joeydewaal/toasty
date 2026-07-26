@@ -485,9 +485,7 @@ impl ToSql for &stmt::OrderByExpr {
 impl ToSql for &stmt::Returning {
     fn to_sql(self, f: &mut super::Formatter<'_>) {
         match self {
-            stmt::Returning::Project {
-                expr: stmt::Expr::Record(expr_record),
-            } => {
+            stmt::Returning::Project(stmt::Expr::Record(expr_record)) => {
                 // Alias every projected field positionally (`AS column1`, ...).
                 // A nested SELECT/RETURNING referenced from an outer query (e.g.
                 // a data-modifying CTE joined for its returned rows) is read by
@@ -502,9 +500,7 @@ impl ToSql for &stmt::Returning {
 
                 fmt!(f, Comma(fields));
             }
-            stmt::Returning::Project {
-                expr: stmt::Expr::Value(stmt::Value::Record(value_record)),
-            } => {
+            stmt::Returning::Project(stmt::Expr::Value(stmt::Value::Record(value_record))) => {
                 fmt!(f, Comma(&value_record.fields));
             }
             _ => todo!("returning={self:#?}"),

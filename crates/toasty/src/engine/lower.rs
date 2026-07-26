@@ -1065,7 +1065,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
-        let old = i.is_old();
+        let old = i.uses_old();
         let load_implicit_relations = matches!(i, stmt::Returning::Model { .. })
             && !matches!(self.cx, LoweringContext::Update);
         if let stmt::Returning::Model { include, .. } = i {
@@ -1100,7 +1100,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 .visit_expr_mut(&mut returning);
             }
 
-            *i = stmt::Returning::Project { expr: returning };
+            *i = stmt::Returning::Project(returning);
         }
 
         // For multi-row INSERT returning, visit each row with its row index so
@@ -1276,9 +1276,12 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
 
                 // Step 2 — build the returning expression.
-                *returning = stmt::Returning::Project {
-                    expr: build_update_returning(model.id, None, &mapping.fields, &changed_bits),
-                };
+                *returning = stmt::Returning::Project(build_update_returning(
+                    model.id,
+                    None,
+                    &mapping.fields,
+                    &changed_bits,
+                ));
             }
         }
 

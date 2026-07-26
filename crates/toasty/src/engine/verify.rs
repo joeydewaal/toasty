@@ -260,7 +260,7 @@ impl stmt::Visit for Verify<'_, '_> {
         }
 
         if let Some(returning) = &i.returning {
-            if returning.is_old() && !self.capability.update_returning_old {
+            if returning.uses_old() && !self.capability.update_returning_old {
                 self.record(Error::unsupported_feature(format!(
                     "{} does not support returning old values from updates",
                     self.capability.driver_name

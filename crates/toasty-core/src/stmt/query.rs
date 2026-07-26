@@ -316,7 +316,7 @@ impl QueryBuilder {
     /// Sets the returning clause to `Returning::Project` containing the given
     /// expression.
     pub fn returning_project(self, expr: impl Into<Expr>) -> Self {
-        self.returning(Returning::Project { expr: expr.into() })
+        self.returning(Returning::Project(expr.into()))
     }
 
     /// Sets the returning clause to `Returning::Expr` containing the given

@@ -431,7 +431,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             }
             Returning::Changed => todo!(),
             Returning::Count => Type::U64,
-            Returning::Project { expr } => {
+            Returning::Project(expr) => {
                 let ty = self.infer_expr_ty2(&arg_ty_stack, expr, false);
 
                 if single { ty } else { Type::list(ty) }

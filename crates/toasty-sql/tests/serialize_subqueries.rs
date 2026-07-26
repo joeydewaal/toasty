@@ -107,9 +107,7 @@ fn select_id_from_users() -> stmt::Query {
         }],
     });
     let select = Select {
-        returning: Returning::Project {
-            expr: Expr::record([col(0, 0)]),
-        },
+        returning: Returning::Project(Expr::record([col(0, 0)])),
         source,
         filter: Filter::ALL,
         distinct: false,
@@ -211,9 +209,7 @@ fn select_with_single_cte() {
     let outer_select = Select {
         // Reference column 0 of the CTE: the serializer resolves this as a
         // `ColumnAlias` (`col_0`) because the underlying table_ref is a CTE.
-        returning: Returning::Project {
-            expr: Expr::record([col(0, 0)]),
-        },
+        returning: Returning::Project(Expr::record([col(0, 0)])),
         source: outer_source,
         filter: Filter::ALL,
         distinct: false,
@@ -244,9 +240,7 @@ fn select_with_multiple_ctes() {
         }],
     });
     let outer_select = Select {
-        returning: Returning::Project {
-            expr: Expr::record([col(0, 0)]),
-        },
+        returning: Returning::Project(Expr::record([col(0, 0)])),
         source: outer_source,
         filter: Filter::ALL,
         distinct: false,
@@ -289,9 +283,7 @@ fn select_from_derived_subquery() {
         }],
     });
     let outer_select = Select {
-        returning: Returning::Project {
-            expr: Expr::record([col(0, 0)]),
-        },
+        returning: Returning::Project(Expr::record([col(0, 0)])),
         source: outer_source,
         filter: Filter::ALL,
         distinct: false,
@@ -315,9 +307,7 @@ fn select_users_with_filter(filter: Expr) -> stmt::Statement {
         }],
     });
     let select = Select {
-        returning: Returning::Project {
-            expr: Expr::record([col(0, 0)]),
-        },
+        returning: Returning::Project(Expr::record([col(0, 0)])),
         source,
         filter: Filter::new(filter),
         distinct: false,

@@ -59,9 +59,7 @@ fn document_update_returning_constantizes_only_new_values() {
         Expr::cast_from(Expr::Value(profile.clone()), doc_ty, &column.ty),
     );
 
-    let mut returning = Returning::Project {
-        expr: Expr::record_from_vec(vec![raising_expr.clone()]),
-    };
+    let mut returning = Returning::Project(Expr::record_from_vec(vec![raising_expr.clone()]));
 
     constantize_update_returning(
         stmt::ExprContext::new_with_target(&schema, table),
@@ -72,20 +70,16 @@ fn document_update_returning_constantizes_only_new_values() {
     // Lowering cast then raising cast round-trip to the positional record.
     assert_eq!(
         returning,
-        Returning::Project {
-            expr: Expr::Value(Value::record_from_vec(vec![profile])),
-        }
+        Returning::Project(Expr::Value(Value::record_from_vec(vec![profile])))
     );
 
-    let expected = Returning::Project {
-        expr: Expr::record([
-            Expr::project(
-                ExprRow::table(column_id.table, RowImage::Old),
-                [column_id.index],
-            ),
-            raising_expr,
-        ]),
-    };
+    let expected = Returning::Project(Expr::record([
+        Expr::project(
+            ExprRow::table(column_id.table, RowImage::Old),
+            [column_id.index],
+        ),
+        raising_expr,
+    ]));
     let mut returning = expected.clone();
 
     constantize_update_returning(
