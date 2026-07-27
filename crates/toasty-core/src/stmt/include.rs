@@ -1,6 +1,6 @@
 use super::{Node, Path, Query, Visit, VisitMut};
 
-/// An association preload entry on a `Returning::Model` clause.
+/// An association preload entry on a `ReturningExpr::Model` clause.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Include {
     /// The relation path to preload.

@@ -84,6 +84,7 @@ impl Engine {
     ) -> Result<toasty_core::driver::ExecResponse> {
         upsert::apply_defaults(&mut stmt)?;
         self.verify(&stmt)?;
+        let single = stmt.is_single();
 
         // Lower the statement to High-level intermediate representation
         let hir = self.lower_stmt(stmt)?;
@@ -99,7 +100,8 @@ impl Engine {
 
         // The plan is called once (single entry record stream) with no arguments
         // (empty record).
-        self.exec_plan(connection, plan, in_transaction).await
+        self.exec_plan(connection, plan, in_transaction, single)
+            .await
     }
 
     /// Executes user-authored SQL through the driver SQL path.

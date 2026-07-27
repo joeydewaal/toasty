@@ -31,33 +31,34 @@ use toasty_core::{
 
 use crate::engine::{Engine, HirStatement, hir, simplify::Simplify, upsert};
 
-/// Rewrites unqualified references in an update's returning clause into
-/// projections out of a specific row image, so the serializer knows whether to
-/// read the pre- or post-update value.
-struct QualifyRowImage {
+/// Rewrites unqualified references in an update's old-model returning clause
+/// into projections out of the pre-update row.
+struct QualifyOldRow {
     model: app::ModelId,
     table: toasty_core::schema::db::TableId,
-    image: stmt::RowImage,
 }
 
-impl VisitMut for QualifyRowImage {
+impl VisitMut for QualifyOldRow {
     fn visit_expr_mut(&mut self, expr: &mut stmt::Expr) {
         if let stmt::Expr::Reference(stmt::ExprReference::Field { nesting: 0, index }) = expr {
-            *expr = stmt::Expr::project(stmt::ExprRow::model(self.model, self.image), [*index]);
+            *expr = stmt::Expr::project(stmt::ExprRow::old_model(self.model), [*index]);
             return;
         }
 
         if let stmt::Expr::Reference(stmt::ExprReference::Column(column)) = expr
             && column.nesting == 0
         {
-            *expr = stmt::Expr::project(
-                stmt::ExprRow::table(self.table, self.image),
-                [column.column],
-            );
+            *expr = stmt::Expr::project(stmt::ExprRow::old_table(self.table), [column.column]);
             return;
         }
 
         visit_mut::visit_expr_mut(self, expr);
+    }
+
+    fn visit_expr_stmt_mut(&mut self, _expr: &mut stmt::ExprStmt) {
+        // Association includes are separate statement scopes. Their parent
+        // references are lowered through the normal back-reference machinery;
+        // only the update's root projection reads from the old row.
     }
 }
 
@@ -216,9 +217,6 @@ enum LoweringContext<'a> {
     /// Lowering the returning clause of a statement. Optionally carries the
     /// parent INSERT's row index when visiting a per-row returning expression.
     Returning(Option<usize>),
-
-    /// Lowering an update statement.
-    Update,
 
     /// All other lowering cases
     Statement,
@@ -839,11 +837,11 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
             }
             stmt::Expr::Project(project)
-                if let stmt::Expr::Row(stmt::ExprRow::Model { model, image }) =
-                    project.base.as_ref() =>
+                if let stmt::Expr::Row(row) = project.base.as_ref()
+                    && let stmt::ExprRowTarget::Model(model) = row.target() =>
             {
                 let (table, column) = {
-                    let mapping = self.schema().mapping_for(*model);
+                    let mapping = self.schema().mapping_for(model);
                     let mapped = mapping
                         .resolve_field_mapping(&project.projection)
                         .expect("row field must map to a column");
@@ -856,7 +854,11 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                     (mapping.table, column)
                 };
                 debug_assert_eq!(table, column.table);
-                *project.base = stmt::ExprRow::table(table, *image).into();
+                *project.base = match row {
+                    stmt::ExprRow::Incoming(_) => stmt::ExprRow::incoming_table(table),
+                    stmt::ExprRow::Old(_) => stmt::ExprRow::old_table(table),
+                }
+                .into();
                 project.projection = stmt::Projection::from_index(column.index);
             }
             // A null-check on an `Option<Embed>` field reduces to a null-check on
@@ -917,7 +919,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                     // clause becomes a subquery that loads the related
                     // model(s).  This is the `.select(rel_field)` path; it
                     // mirrors the include-subquery machinery that
-                    // `.include(...)` uses for `Returning::Model`.
+                    // `.include(...)` uses for `ReturningExpr::Model`.
                     stmt::ExprReference::Field { nesting: 0, index }
                         if matches!(self.cx, LoweringContext::Returning(_))
                             && self.model_unwrap().fields[*index].ty.is_relation() =>
@@ -1065,10 +1067,8 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
-        let old = i.uses_old();
-        let load_implicit_relations = matches!(i, stmt::Returning::Model { .. })
-            && !matches!(self.cx, LoweringContext::Update);
-        if let stmt::Returning::Model { include, .. } = i {
+        if let stmt::ReturningExpr::Model { image, include } = &mut i.expr {
+            let image = *image;
             // Start from the schema's pre-computed default returning — every
             // Deferred fields, top-level or nested, are already `Null`.
             // `process_top_level_includes` then splices loaded forms in for
@@ -1078,36 +1078,25 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             let mut include_paths = std::mem::take(include);
             let is_insert = self.cx.is_insert();
 
-            if load_implicit_relations {
-                self.prepare_model_returning_for_context(
-                    &mut returning,
-                    &mut include_paths,
-                    is_insert,
-                );
-            }
+            self.prepare_model_returning_for_context(&mut returning, &mut include_paths, is_insert);
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
-            if matches!(self.cx, LoweringContext::Update) {
-                QualifyRowImage {
+            if image == stmt::RowImage::Old {
+                QualifyOldRow {
                     model: self.mapping_unwrap().id,
                     table: self.mapping_unwrap().table,
-                    image: if old {
-                        stmt::RowImage::Old
-                    } else {
-                        stmt::RowImage::New
-                    },
                 }
                 .visit_expr_mut(&mut returning);
             }
 
-            *i = stmt::Returning::Project(returning);
+            i.set_project(returning);
         }
 
         // For multi-row INSERT returning, visit each row with its row index so
         // that sub-statements (e.g., child INSERTs for HasOne relations) capture
         // the correct parent row index via scope_statement.
         if matches!(&self.cx, LoweringContext::Insert(..))
-            && let stmt::Returning::Expr(stmt::Expr::List(list)) = i
+            && let stmt::ReturningExpr::Expr(stmt::Expr::List(list)) = &mut i.expr
         {
             for (index, item) in list.items.iter_mut().enumerate() {
                 self.lower_returning_for_row(index).visit_expr_mut(item);
@@ -1208,7 +1197,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             }
 
             if stmt.source.single
-                && let stmt::Returning::Expr(expr) = &returning
+                && let stmt::ReturningExpr::Expr(expr) = &returning.expr
             {
                 // Not strictly true, but there is nothing that needs to
                 // return a list at this point for a "single" query. If this
@@ -1235,7 +1224,13 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             lower.visit_limit_mut(limit);
         }
 
-        self.visit_expr_set_mut(&mut stmt.body);
+        if matches!(self.cx, LoweringContext::Statement)
+            && matches!(stmt.body, stmt::ExprSet::Values(_))
+        {
+            self.lower_returning().visit_expr_set_mut(&mut stmt.body);
+        } else {
+            self.visit_expr_set_mut(&mut stmt.body);
+        }
 
         self.rewrite_offset_after_as_filter(stmt);
     }
@@ -1252,7 +1247,6 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
 
     fn visit_stmt_update_mut(&mut self, stmt: &mut stmt::Update) {
         let mut lower = self.scope_expr(&stmt.target);
-        lower.cx = LoweringContext::Update;
 
         let mut returning_changed = false;
 
@@ -1276,7 +1270,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
 
                 // Step 2 — build the returning expression.
-                *returning = stmt::Returning::Project(build_update_returning(
+                returning.set_project(build_update_returning(
                     model.id,
                     None,
                     &mapping.fields,
@@ -1649,7 +1643,6 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
     fn lower_expr_field(&self, nesting: usize, index: usize) -> stmt::Expr {
         match self.cx {
             LoweringContext::Statement
-            | LoweringContext::Update
             | LoweringContext::Returning(_)
             | LoweringContext::Insert(..) => {
                 // Upsert update assignments are visited in the surrounding
@@ -2042,7 +2035,7 @@ impl LoweringContext<'_> {
     }
 
     fn is_statement(&self) -> bool {
-        matches!(self, LoweringContext::Statement | LoweringContext::Update)
+        matches!(self, LoweringContext::Statement)
     }
 }
 
@@ -2112,7 +2105,7 @@ impl stmt::Input for AssignmentInput<'_> {
     }
 }
 
-/// Builds the returning expression for a `Returning::Changed` update.
+/// Builds the returning expression for a `Returning::changed()` update.
 ///
 /// Iterates `mapping_fields` using `changed_bits` to determine what to include:
 ///

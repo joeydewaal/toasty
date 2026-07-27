@@ -66,9 +66,12 @@ fn query_all() {
         filter: {
             expr: Some(core_stmt::Expr::Value(core_stmt::Value::Bool(true))),
         },
-        returning: core_stmt::Returning::Model {
-            include: [],
-            old: false,
+        returning: core_stmt::Returning {
+            expr: core_stmt::ReturningExpr::Model {
+                image: core_stmt::RowImage::New,
+                include: [],
+            },
+            cardinality: core_stmt::ReturningCardinality::List,
         },
     });
 }

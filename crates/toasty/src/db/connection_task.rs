@@ -187,8 +187,14 @@ impl ConnectionTask {
         in_transaction: bool,
     ) -> crate::Result<toasty_core::driver::ExecResponse> {
         let single = stmt.is_single();
-        let update_single =
-            matches!(&stmt, toasty_core::stmt::Statement::Update(update) if update.single);
+        let update_single = matches!(
+            &stmt,
+            toasty_core::stmt::Statement::Update(update)
+                if update
+                    .returning
+                    .as_ref()
+                    .is_some_and(toasty_core::stmt::Returning::is_single)
+        );
         let mut response = self
             .engine
             .exec(&mut *self.connection, stmt, in_transaction)

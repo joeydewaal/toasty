@@ -426,9 +426,8 @@ impl Expand<'_> {
                     #vis fn #name(self) -> #toasty::stmt::Expr<FieldExprTarget<#ty>> {
                         #toasty::stmt::Expr::from_untyped(
                             #toasty::core::stmt::Expr::project(
-                                #toasty::core::stmt::ExprRow::model(
+                                #toasty::core::stmt::ExprRow::incoming_model(
                                     <#model_ident as #toasty::Model>::id(),
-                                    #toasty::core::stmt::RowImage::Incoming,
                                 ),
                                 #toasty::stmt::Projection::from_index(#index),
                             ),

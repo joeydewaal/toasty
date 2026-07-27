@@ -1,4 +1,4 @@
-//! Lowering for `Returning::Model` includes and deferred-field masking.
+//! Lowering for `ReturningExpr::Model` includes and deferred-field masking.
 //!
 //! `mapping::Model::default_returning` is computed at schema-build time with
 //! every deferred field — top-level or nested inside an embedded type —
@@ -68,7 +68,7 @@ struct FieldIncludes {
 }
 
 impl LowerStatement<'_, '_> {
-    /// Top-level entry from `visit_returning_mut` for a `Returning::Model`.
+    /// Top-level entry from `visit_returning_mut` for a `ReturningExpr::Model`.
     /// Flattens each include to its projection (folding any
     /// `PathRoot::Variant` chain into discriminant-index steps), then runs
     /// the recursion against the model's fields.
@@ -416,7 +416,7 @@ impl LowerStatement<'_, '_> {
         // (from a bare `.include(posts())`) need no nested include — the
         // subquery itself satisfies them. The lowering pipeline will
         // recursively group and process the nested includes when it encounters
-        // `Returning::Model` on this subquery.
+        // `ReturningExpr::Model` on this subquery.
         for fi in nested {
             if !fi.projection.is_empty() {
                 stmt.include(stmt::Include {

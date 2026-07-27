@@ -151,7 +151,7 @@ mod expr_reference;
 pub use expr_reference::{ExprColumn, ExprReference};
 
 mod expr_row;
-pub use expr_row::{ExprRow, RowImage};
+pub use expr_row::{ExprRow, ExprRowTarget};
 
 mod expr_set;
 pub use expr_set::ExprSet;
@@ -238,7 +238,7 @@ mod query;
 pub use query::{Lock, Query};
 
 mod returning;
-pub use returning::Returning;
+pub use returning::{Returning, ReturningCardinality, ReturningExpr, RowImage};
 
 mod select;
 pub use select::Select;
@@ -413,7 +413,7 @@ impl Statement {
         match self {
             Statement::Query(q) => q.single,
             Statement::Insert(i) => i.source.single,
-            Statement::Update(i) => i.single,
+            Statement::Update(i) => i.returning.as_ref().is_some_and(Returning::is_single),
             Statement::Delete(d) => d.selection().single,
         }
     }

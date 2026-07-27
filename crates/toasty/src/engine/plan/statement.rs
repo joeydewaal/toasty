@@ -144,9 +144,6 @@ struct PlanStatement<'a, 'b> {
 
     /// True if the statement's dependencies have been tracked
     remaining_deps: Vec<hir::StmtId>,
-
-    /// Whether this statement returns pre-mutation values.
-    returns_old: bool,
 }
 
 impl HirPlanner<'_> {
@@ -180,7 +177,6 @@ impl HirPlanner<'_> {
                 batch_load_args: IndexSet::new(),
             },
             remaining_deps: stmt_info.deps.iter().cloned().collect(),
-            returns_old: false,
         };
         planner.plan(stmt)?;
 
@@ -193,8 +189,14 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     fn plan(&mut self, mut stmt: stmt::Statement) -> Result<()> {
         let mut returning = stmt.take_returning();
-        let returns_old = returning.as_ref().is_some_and(stmt::Returning::uses_old);
-        self.returns_old = returns_old;
+        // Plan the complete returned row set. The statement boundary or parent
+        // NestedMerge applies the caller's requested output cardinality.
+        if stmt.is_update()
+            && let Some(returning) = &mut returning
+        {
+            returning.cardinality = stmt::ReturningCardinality::List;
+        }
+
         // For single VALUES queries (e.g., batch queries), the VALUES body is
         // the output expression. Extract it as a returning value so the planner
         // can wire up sub-statement dependencies. An empty VALUES body (e.g. an
@@ -207,19 +209,23 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             && let stmt::ExprSet::Values(values) = &mut query.body
             && !values.rows.is_empty()
         {
-            returning = Some(stmt::Returning::Expr(if query.single {
+            let expr = if query.single {
                 assert_eq!(1, values.rows.len(), "single query has more than one row");
-                values.rows.drain(..).next().unwrap()
+                let expr = values.rows[0].take();
+                values.rows[0] = stmt::Expr::record::<stmt::Expr>([]);
+                expr
             } else {
-                stmt::Expr::list(std::mem::take(&mut values.rows))
-            }));
+                let expr = stmt::Expr::list(std::mem::take(&mut values.rows));
+                values.rows.push(stmt::Expr::record::<stmt::Expr>([]));
+                expr
+            };
+            returning = Some(stmt::Returning::expression(expr));
         }
 
         // No queries are single at this point.
         match &mut stmt {
             stmt::Statement::Query(stmt) => stmt.single = false,
             stmt::Statement::Insert(stmt) => stmt.source.single = false,
-            stmt::Statement::Update(stmt) => stmt.single = false,
             _ => {}
         }
 
@@ -288,25 +294,24 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     ) -> IndexSet<mir::NodeId> {
         let mut inputs = IndexSet::new();
 
-        let is_returning_projection = matches!(returning, Some(stmt::Returning::Project(..)));
+        let is_returning_projection = returning.as_ref().is_some_and(stmt::Returning::is_project);
         debug_assert!(
             is_returning_projection
                 || matches!(
-                    returning,
-                    None | Some(stmt::Returning::Expr(..) | stmt::Returning::Count)
+                    returning.as_ref().map(|returning| &returning.expr),
+                    None | Some(stmt::ReturningExpr::Expr(..) | stmt::ReturningExpr::Count)
                 )
         );
 
-        match returning {
-            Some(stmt::Returning::Project(expr)) | Some(stmt::Returning::Expr(expr)) => {
-                self.rewrite_returning_inputs(
-                    expr,
-                    &mut inputs,
-                    load_data_node_id,
-                    is_returning_projection,
-                );
-            }
-            _ => {}
+        if let Some(stmt::ReturningExpr::Project(expr) | stmt::ReturningExpr::Expr(expr)) =
+            returning.as_mut().map(|returning| &mut returning.expr)
+        {
+            self.rewrite_returning_inputs(
+                expr,
+                &mut inputs,
+                load_data_node_id,
+                is_returning_projection,
+            );
         }
 
         inputs
@@ -330,6 +335,30 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         is_returning_projection: bool,
     ) {
         visit_mut::walk_expr_scoped_mut(expr, 0, |expr, scope_depth| {
+            if let stmt::Expr::Project(project) = expr
+                && let stmt::Expr::Row(stmt::ExprRow::Old(stmt::ExprRowTarget::Table(table))) =
+                    project.base.as_ref()
+            {
+                let [column] = project.projection.as_slice() else {
+                    panic!("row projection must reference one column")
+                };
+                let selected = self
+                    .stmt_info
+                    .load_data_select_items
+                    .get()
+                    .unwrap()
+                    .get_index_of_old_column(*table, *column);
+                let (position, _) = inputs.insert_full(load_data_node_id);
+                *expr = stmt::Expr::project(
+                    stmt::ExprArg {
+                        position,
+                        nesting: scope_depth,
+                    },
+                    [selected],
+                );
+                return false;
+            }
+
             if scope_depth != 0 {
                 return true;
             }
@@ -413,25 +442,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     *expr = stmt::Expr::arg_project(position, [column]);
                     false
                 }
-                stmt::Expr::Project(project) if is_returning_projection => {
-                    let stmt::Expr::Row(stmt::ExprRow::Table { table, image }) =
-                        project.base.as_ref()
-                    else {
-                        return true;
-                    };
-                    let [column] = project.projection.as_slice() else {
-                        panic!("row projection must reference one column")
-                    };
-                    let selected = self
-                        .stmt_info
-                        .load_data_select_items
-                        .get()
-                        .unwrap()
-                        .get_index_of_row_column(*table, *column, *image);
-                    let (position, _) = inputs.insert_full(load_data_node_id);
-                    *expr = stmt::Expr::arg_project(position, [selected]);
-                    false
-                }
                 stmt::Expr::Func(stmt::ExprFunc::Count(stmt::FuncCount { arg: None, .. }))
                     if is_returning_projection =>
                 {
@@ -471,6 +481,13 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         column
     }
 
+    fn returns_old(&self) -> bool {
+        self.load_data
+            .select_items
+            .iter()
+            .any(|item| matches!(item, SelectItem::OldColumn { .. }))
+    }
+
     fn extract_columns_from_returning(&mut self, returning: &Returning) {
         stmt::visit::for_each_expr(returning, |expr| match expr {
             stmt::Expr::Reference(expr_reference) => {
@@ -481,17 +498,17 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 self.load_data.select_items.insert((*expr_reference).into());
             }
             stmt::Expr::Project(project) => {
-                let stmt::Expr::Row(stmt::ExprRow::Table { table, image }) = project.base.as_ref()
+                let stmt::Expr::Row(stmt::ExprRow::Old(stmt::ExprRowTarget::Table(table))) =
+                    project.base.as_ref()
                 else {
                     return;
                 };
                 let [column] = project.projection.as_slice() else {
                     panic!("row projection must reference one column")
                 };
-                self.load_data.select_items.insert(SelectItem::RowColumn {
+                self.load_data.select_items.insert(SelectItem::OldColumn {
                     table: *table,
                     column: *column,
-                    image: *image,
                 });
             }
             stmt::Expr::Func(stmt::ExprFunc::Count(stmt::FuncCount { arg: None, .. })) => {
@@ -591,8 +608,9 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     let (index, _) = self.load_data.inputs.insert_full(node_id);
                     data_load_input.set(Some(index));
 
-                    // If the target statement is a query, then we are in a batch-load scenario.
-                    if target_stmt_info.stmt().is_query() {
+                    // Query and update parents can yield one or more rows that
+                    // feed an eager relation load.
+                    if target_stmt_info.stmt().is_query() || target_stmt_info.stmt().is_update() {
                         debug_assert!(insert_row.is_none());
 
                         let (batch_load_table_ref_index, _) =
@@ -622,9 +640,30 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     }
 
     fn collect_back_ref_columns(&mut self) {
+        let old_table = if self.returns_old() {
+            match self.stmt() {
+                stmt::Statement::Update(update) => match update.target {
+                    stmt::UpdateTarget::Table(table) => Some(table),
+                    _ => None,
+                },
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         for back_ref in self.stmt_info.back_refs.values() {
             for expr in &back_ref.exprs {
-                self.load_data.select_items.insert((*expr).into());
+                if let Some(table) = old_table
+                    && let stmt::ExprReference::Column(column) = expr
+                {
+                    self.load_data.select_items.insert(SelectItem::OldColumn {
+                        table,
+                        column: column.column,
+                    });
+                } else {
+                    self.load_data.select_items.insert((*expr).into());
+                }
             }
         }
     }
@@ -687,7 +726,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         assert!(tables.len() <= 1, "TODO: handle more complicated cases");
 
         let sub_query = stmt::Select {
-            returning: stmt::Returning::Project(stmt::Expr::record([1])),
+            returning: stmt::Returning::project(stmt::Expr::record([1])),
             source: stmt::Source::Table(stmt::SourceTable {
                 tables,
                 from: vec![stmt::TableWithJoins {
@@ -841,11 +880,18 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     ) -> Result<mir::NodeId> {
         if stmt.assignments().is_some_and(stmt::Assignments::is_empty)
             && returning.as_ref().is_some_and(stmt::Returning::is_project)
+            && !self.load_data.select_items.is_empty()
         {
             // Relation lowering can consume every root assignment. Model returns
-            // still read the selected roots after the relation mutations finish.
+            // that still need runtime columns read the selected roots after the
+            // relation mutations finish. Fully constantized instance reloads keep
+            // using the constant node below.
             let update = stmt.into_update_unwrap();
-            if let Some(stmt::Returning::Project(expr)) = returning {
+            if let Some(stmt::Returning {
+                expr: stmt::ReturningExpr::Project(expr),
+                ..
+            }) = returning
+            {
                 stmt::visit_mut::for_each_expr_mut(expr, |expr| {
                     let stmt::Expr::Project(project) = expr else {
                         return;
@@ -888,6 +934,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         if !self.planner.engine.capability().sql
             && !self.load_data.select_items.is_empty()
             && let stmt::Statement::Update(update) = &stmt
+            && !update.selection_single
         {
             let table = self
                 .planner
@@ -1055,7 +1102,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         // Set returning clause with all columns (including added ORDER BY columns)
         if !self.load_data.select_items.is_empty() {
-            stmt.set_returning(stmt::Returning::Project(stmt::Expr::record(
+            stmt.set_returning(stmt::Returning::project(stmt::Expr::record(
                 self.load_data
                     .select_items
                     .iter()
@@ -1310,7 +1357,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 }
                 .into(),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project(conditional_probe_projection(cte_column(0, 0))),
+                returning: stmt::Returning::project(conditional_probe_projection(cte_column(0, 0))),
                 distinct: false,
             })
             .build(),
@@ -1327,7 +1374,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             }
             .into(),
             filter: true.into(),
-            returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![stmt::Expr::eq(
+            returning: stmt::Returning::project(stmt::Expr::record_from_vec(vec![stmt::Expr::eq(
                 stmt::ExprColumn {
                     nesting: 0,
                     table: 0,
@@ -1354,8 +1401,8 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         // back) means the caller wants the changed rows; otherwise the write
         // just reports how many rows it touched. Only an UPDATE reads columns
         // back — a DELETE never has a returning.
-        let returning_len = match write.returning() {
-            Some(stmt::Returning::Project(stmt::Expr::Record(record), ..)) => record.fields.len(),
+        let returning_len = match write.returning().map(|returning| &returning.expr) {
+            Some(stmt::ReturningExpr::Project(stmt::Expr::Record(record))) => record.fields.len(),
             Some(returning) => todo!("unexpected conditional write returning={returning:#?}"),
             None => 0,
         };
@@ -1381,7 +1428,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                 }
                 .into(),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![
+                returning: stmt::Returning::project(stmt::Expr::record_from_vec(vec![
                     cte_column(0, 0),
                     cte_column(0, 1),
                 ])),
@@ -1418,7 +1465,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     },
                 ),
                 filter: stmt::Filter::new(true),
-                returning: stmt::Returning::Project(stmt::Expr::record_from_vec(columns)),
+                returning: stmt::Returning::project(stmt::Expr::record_from_vec(columns)),
                 distinct: false,
             })
         };
@@ -1895,7 +1942,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     filter,
                     condition,
                     columns: self.load_data.select_items.extract_expr_references(),
-                    returning_old: self.returns_old,
+                    returning_old: self.returns_old(),
                     ty: ty.clone(),
                 })
             }
@@ -1980,12 +2027,31 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     // ===== Finalization helpers =====
 
     fn process_back_ref_projections(&mut self, exec_stmt_node_id: mir::NodeId) {
+        let old_table = if self.returns_old() {
+            match self.stmt() {
+                stmt::Statement::Update(update) => match update.target {
+                    stmt::UpdateTarget::Table(table) => Some(table),
+                    _ => None,
+                },
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         for back_ref in self.stmt_info.back_refs.values() {
             let projection = stmt::Expr::record(back_ref.exprs.iter().map(|expr_reference| {
-                let index = self
-                    .load_data
-                    .select_items
-                    .get_index_of_expr_reference(*expr_reference);
+                let index = if let Some(table) = old_table
+                    && let stmt::ExprReference::Column(column) = expr_reference
+                {
+                    self.load_data
+                        .select_items
+                        .get_index_of_old_column(table, column.column)
+                } else {
+                    self.load_data
+                        .select_items
+                        .get_index_of_expr_reference(*expr_reference)
+                };
                 stmt::Expr::arg_project(0, [index])
             }));
 
@@ -2051,8 +2117,8 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         // Then handle returning clause
         if let Some(clause) = returning.clause {
-            match clause {
-                stmt::Returning::Expr(expr) => {
+            match clause.expr {
+                stmt::ReturningExpr::Expr(expr) => {
                     // Value variant contains a constant expression that can be evaluated
                     if let Ok(value) = expr.eval_const() {
                         let ty = value.infer_ty();
@@ -2076,7 +2142,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         node_id
                     }
                 }
-                stmt::Returning::Project(projection) => {
+                stmt::ReturningExpr::Project(projection) => {
                     if let Some(position) = returning.inputs.get_index_of(&data_load_node_id) {
                         self.insert_mir_with_deps(mir::Eval {
                             inputs: returning.inputs,
@@ -2101,7 +2167,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         self.insert_mir_with_deps(node)
                     }
                 }
-                stmt::Returning::Count => {
+                stmt::ReturningExpr::Count => {
                     self.apply_dependencies_to_node(data_load_node_id);
                     data_load_node_id
                 }
@@ -2196,7 +2262,7 @@ fn conditional_probe_query(
     stmt::Query::builder(stmt::Select {
         source,
         filter: stmt::Filter::new(filter),
-        returning: stmt::Returning::Project(stmt::Expr::record_from_vec(vec![condition])),
+        returning: stmt::Returning::project(stmt::Expr::record_from_vec(vec![condition])),
         distinct: false,
     })
     .locks(if lock {

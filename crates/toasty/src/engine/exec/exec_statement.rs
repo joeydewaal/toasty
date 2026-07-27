@@ -325,7 +325,7 @@ impl Exec<'_> {
         &self,
         stmt: &mut stmt::Statement,
     ) -> Option<MySQLUpdateReturning> {
-        if self.engine.capability().update_returning_new || !self.engine.capability().sql {
+        if self.engine.capability().native_update_returning_new || !self.engine.capability().sql {
             return None;
         }
 
@@ -386,7 +386,7 @@ impl Exec<'_> {
         &self,
         stmt: &mut stmt::Statement,
     ) -> Option<MySQLInsertReturning> {
-        if !self.engine.capability().sql || self.engine.capability().update_returning_new {
+        if !self.engine.capability().sql || self.engine.capability().native_insert_returning {
             return None;
         }
 
@@ -428,8 +428,8 @@ impl Exec<'_> {
         let auto_column_type = auto_column_type.expect("auto_column_type should be set");
 
         // Extract the expression from the RETURNING clause and replace ExprReference with ExprArg
-        let mut returning_expr = match returning {
-            stmt::Returning::Project(expr) => expr,
+        let mut returning_expr = match returning.expr {
+            stmt::ReturningExpr::Project(expr) => expr,
             _ => panic!(
                 "MySQL INSERT with RETURNING must have an Expr, got: {:#?}",
                 returning

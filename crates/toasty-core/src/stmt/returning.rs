@@ -1,5 +1,5 @@
 use super::{Expr, Include};
-use crate::stmt::{self, ExprSet, Node, Query, RowImage, Statement, Visit};
+use crate::stmt::{self, ExprSet, Node, Query, Statement, Visit};
 
 /// Specifies what data a statement returns.
 ///
@@ -11,21 +11,29 @@ use crate::stmt::{self, ExprSet, Node, Query, RowImage, Statement, Visit};
 /// ```ignore
 /// use toasty_core::stmt::Returning;
 ///
-/// let ret = Returning::Model {
-///     include: vec![],
-///     old: false,
-/// };
+/// let ret = Returning::model();
 /// assert!(ret.is_model());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub enum Returning {
+pub struct Returning {
+    /// The value returned for each affected row.
+    pub expr: ReturningExpr,
+
+    /// Whether the statement returns a list or at most one value.
+    pub cardinality: ReturningCardinality,
+}
+
+/// The value produced by a returning clause.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReturningExpr {
     /// Return the full model with the specified association includes.
     Model {
+        /// Which mutation row image supplies the model fields.
+        image: RowImage,
+
         /// Associations that should be eagerly loaded, with optional
         /// per-relation filters.
         include: Vec<Include>,
-        /// Return the model as it was before an update.
-        old: bool,
     },
 
     /// Return whether the operation changed any rows.
@@ -41,110 +49,196 @@ pub enum Returning {
     Expr(Expr),
 }
 
+/// Selects values before or after a mutation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowImage {
+    /// Values before the mutation.
+    Old,
+
+    /// Values after the mutation.
+    New,
+}
+
+/// Controls the number of values produced by a returning clause.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReturningCardinality {
+    /// Return every projected value in a list.
+    #[default]
+    List,
+
+    /// Return at most one projected value.
+    Single,
+}
+
 impl Returning {
-    /// Creates a `Returning::Project` from an iterator of expressions, combining
+    /// Creates a returning clause with list cardinality.
+    pub fn new(expr: ReturningExpr) -> Self {
+        Self {
+            expr,
+            cardinality: ReturningCardinality::List,
+        }
+    }
+
+    /// Returns the current model without association includes.
+    pub fn model() -> Self {
+        Self::new(ReturningExpr::Model {
+            image: RowImage::New,
+            include: vec![],
+        })
+    }
+
+    /// Returns the model's pre-mutation values without association includes.
+    pub fn old_model() -> Self {
+        Self::new(ReturningExpr::Model {
+            image: RowImage::Old,
+            include: vec![],
+        })
+    }
+
+    /// Changes the output cardinality to at most one value.
+    pub fn single(mut self) -> Self {
+        self.cardinality = ReturningCardinality::Single;
+        self
+    }
+
+    /// Returns `true` when this clause produces at most one value.
+    pub fn is_single(&self) -> bool {
+        self.cardinality == ReturningCardinality::Single
+    }
+
+    /// Returns a projection evaluated against each source row.
+    pub fn project(expr: Expr) -> Self {
+        Self::new(ReturningExpr::Project(expr))
+    }
+
+    /// Returns an expression independent of the statement source.
+    pub fn expression(expr: Expr) -> Self {
+        Self::new(ReturningExpr::Expr(expr))
+    }
+
+    /// Returns whether the mutation changed any rows.
+    pub fn changed() -> Self {
+        Self::new(ReturningExpr::Changed)
+    }
+
+    /// Returns the number of rows affected by the mutation.
+    pub fn count() -> Self {
+        Self::new(ReturningExpr::Count)
+    }
+
+    /// Creates a `ReturningExpr::Project` from an iterator of expressions, combining
     /// them into a record expression.
     pub fn from_project_iter<T>(items: impl IntoIterator<Item = T>) -> Self
     where
         T: Into<Expr>,
     {
-        Returning::Project(Expr::record(items))
+        Returning::project(Expr::record(items))
     }
 
-    /// Returns `true` if this is the `Model` variant.
+    /// Returns `true` if this returns a current or pre-update model.
     pub fn is_model(&self) -> bool {
-        matches!(self, Self::Model { .. })
+        matches!(self.expr, ReturningExpr::Model { .. })
     }
 
-    /// Returns the association includes for a `Model` variant, or an
-    /// empty slice for other variants.
+    /// Returns the association includes for current or old models.
     pub fn model_includes(&self) -> &[Include] {
-        match self {
-            Self::Model { include, .. } => include,
+        match &self.expr {
+            ReturningExpr::Model { include, .. } => include,
             _ => &[],
         }
     }
 
-    /// Returns a mutable reference to the `Model` variant's includes.
+    /// Returns a mutable reference to a model variant's includes.
     ///
     /// # Panics
     ///
-    /// Panics if this is not the `Model` variant.
+    /// Panics if this is not `Model`.
     #[track_caller]
     pub fn model_includes_mut_unwrap(&mut self) -> &mut Vec<Include> {
-        match self {
-            Self::Model { include, .. } => include,
+        match &mut self.expr {
+            ReturningExpr::Model { include, .. } => include,
             _ => panic!("not a Model variant"),
         }
     }
 
     /// Returns `true` if this is the `Changed` variant.
     pub fn is_changed(&self) -> bool {
-        matches!(self, Self::Changed)
+        matches!(self.expr, ReturningExpr::Changed)
     }
 
     /// Returns `true` if this is the `Count` variant.
     pub fn is_count(&self) -> bool {
-        matches!(self, Self::Count)
+        matches!(self.expr, ReturningExpr::Count)
     }
 
     /// Returns `true` if this is the `Project` variant.
     pub fn is_project(&self) -> bool {
-        matches!(self, Self::Project(_))
+        matches!(self.expr, ReturningExpr::Project(_))
     }
 
     /// Returns a reference to the inner expression if this is the `Project`
     /// variant.
     pub fn as_project(&self) -> Option<&Expr> {
-        match self {
-            Self::Project(expr) => Some(expr),
+        match &self.expr {
+            ReturningExpr::Project(expr) => Some(expr),
             _ => None,
         }
     }
 
     /// Returns `true` when this clause reads pre-mutation values.
     pub fn uses_old(&self) -> bool {
-        self.uses_image(RowImage::Old)
+        if matches!(
+            self.expr,
+            ReturningExpr::Model {
+                image: RowImage::Old,
+                ..
+            }
+        ) {
+            return true;
+        }
+
+        struct FindOld(bool);
+
+        impl Visit for FindOld {
+            fn visit_expr_row(&mut self, expr: &stmt::ExprRow) {
+                self.0 |= matches!(expr, stmt::ExprRow::Old(_));
+            }
+        }
+
+        let Some(expr) = self.as_project() else {
+            return false;
+        };
+        let mut find = FindOld(false);
+        find.visit_expr(expr);
+        find.0
     }
 
     /// Returns `true` when this clause reads post-mutation values.
     pub fn uses_new(&self) -> bool {
-        self.uses_image(RowImage::New)
-    }
-
-    fn uses_image(&self, image: RowImage) -> bool {
-        match self {
-            Self::Model { old, .. } => {
-                return match image {
-                    RowImage::Old => *old,
-                    RowImage::New => !*old,
-                    // A model returning clause never reads an upsert's
-                    // proposed row.
-                    RowImage::Incoming => false,
-                };
+        if matches!(
+            self.expr,
+            ReturningExpr::Model {
+                image: RowImage::New,
+                ..
             }
-            Self::Changed | Self::Count | Self::Expr(_) => return false,
-            Self::Project(..) => {}
+        ) {
+            return true;
         }
 
-        struct FindImage {
-            image: RowImage,
-            found: bool,
-        }
+        struct FindReference(bool);
 
-        impl Visit for FindImage {
-            fn visit_expr_row(&mut self, expr: &stmt::ExprRow) {
-                self.found |= expr.image() == self.image;
+        impl Visit for FindReference {
+            fn visit_expr_reference(&mut self, _expr: &stmt::ExprReference) {
+                self.0 = true;
             }
         }
 
-        let expr = self.as_project().unwrap();
-        let mut find = FindImage {
-            image,
-            found: false,
+        let Some(expr) = self.as_project() else {
+            return false;
         };
+        let mut find = FindReference(false);
         find.visit_expr(expr);
-        find.found
+        find.0
     }
 
     /// Returns a reference to the inner expression.
@@ -155,14 +249,14 @@ impl Returning {
     #[track_caller]
     pub fn as_project_unwrap(&self) -> &Expr {
         self.as_project()
-            .unwrap_or_else(|| panic!("expected stmt::Returning::Project; actual={self:#?}"))
+            .unwrap_or_else(|| panic!("expected stmt::ReturningExpr::Project; actual={self:#?}"))
     }
 
     /// Returns a mutable reference to the inner expression if this is the
     /// `Project` variant.
     pub fn as_project_mut(&mut self) -> Option<&mut Expr> {
-        match self {
-            Self::Project(expr) => Some(expr),
+        match &mut self.expr {
+            ReturningExpr::Project(expr) => Some(expr),
             _ => None,
         }
     }
@@ -174,27 +268,36 @@ impl Returning {
     /// Panics if this is not the `Project` variant.
     #[track_caller]
     pub fn as_project_mut_unwrap(&mut self) -> &mut Expr {
-        if !self.is_project() {
-            panic!("expected stmt::Returning::Project; actual={self:#?}");
+        match &mut self.expr {
+            ReturningExpr::Project(expr) => expr,
+            _ => panic!("expected stmt::ReturningExpr::Project"),
         }
-        self.as_project_mut().unwrap()
     }
 
-    /// Replaces this returning clause with `Returning::Project` containing the
+    /// Replaces this returning clause with `ReturningExpr::Project` containing the
     /// given expression.
     pub fn set_project(&mut self, expr: impl Into<Expr>) {
-        *self = Returning::Project(expr.into());
+        let cardinality = self.cardinality;
+        *self = Returning::project(expr.into());
+        self.cardinality = cardinality;
     }
 
     /// Returns `true` if this is the `Expr` variant.
     pub fn is_expr(&self) -> bool {
-        matches!(self, Self::Expr(..))
+        matches!(self.expr, ReturningExpr::Expr(..))
     }
 
     /// Takes this returning clause, replaces it with a null projection, and
     /// returns the original value.
     pub fn take(&mut self) -> Returning {
-        std::mem::replace(self, Returning::Project(stmt::Expr::null()))
+        let cardinality = self.cardinality;
+        std::mem::replace(
+            self,
+            Returning {
+                expr: ReturningExpr::Project(stmt::Expr::null()),
+                cardinality,
+            },
+        )
     }
 }
 
@@ -236,16 +339,16 @@ impl Statement {
         }
     }
 
-    /// Set the `Returning` clause to `Returning::Project` containing the given
+    /// Set the `Returning` clause to `ReturningExpr::Project` containing the given
     /// expression.
     pub fn set_returning_project(&mut self, expr: impl Into<Expr>) {
-        self.set_returning(Returning::Project(expr.into()));
+        self.set_returning(Returning::project(expr.into()));
     }
 
-    /// Set the `Returning` clause to `Returning::Expr` containing the given
+    /// Set the `Returning` clause to `ReturningExpr::Expr` containing the given
     /// expression.
     pub fn set_returning_expr(&mut self, expr: impl Into<Expr>) {
-        self.set_returning(Returning::Expr(expr.into()));
+        self.set_returning(Returning::expression(expr.into()));
     }
 
     /// Returns a reference to this statement's `RETURNING` clause.

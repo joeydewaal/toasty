@@ -45,10 +45,7 @@ impl Select {
     /// a model-level returning clause with no includes.
     pub fn new(source: impl Into<Source>, filter: impl Into<Filter>) -> Self {
         Self {
-            returning: Returning::Model {
-                include: vec![],
-                old: false,
-            },
+            returning: Returning::model(),
             source: source.into(),
             filter: filter.into(),
             distinct: false,
@@ -59,13 +56,13 @@ impl Select {
     ///
     /// # Panics
     ///
-    /// Panics if the returning clause is not `Returning::Model`.
+    /// Panics if the returning clause is not `ReturningExpr::Model`.
     pub(crate) fn include(&mut self, include: impl Into<Include>) {
-        match &mut self.returning {
-            Returning::Model {
+        match &mut self.returning.expr {
+            super::ReturningExpr::Model {
                 include: includes, ..
             } => includes.push(include.into()),
-            _ => panic!("Expected Returning::Model for include operation"),
+            _ => panic!("Expected ReturningExpr::Model for include operation"),
         }
     }
 

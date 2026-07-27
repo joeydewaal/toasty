@@ -23,6 +23,10 @@ pub use load::Load;
 mod model;
 pub use model::{Model, QueryMany, QueryOne, QueryOptionOne};
 
+mod update_count;
+#[doc(hidden)]
+pub use update_count::UpdateCount;
+
 mod option;
 
 mod register;

@@ -18,7 +18,7 @@ use crate::{schema::db, stmt};
 ///
 /// let cap = &Capability::SQLITE;
 /// assert!(cap.sql);
-/// assert!(cap.update_returning_new);
+/// assert!(cap.native_update_returning_new);
 /// assert!(!cap.select_for_update);
 /// ```
 #[derive(Debug)]
@@ -52,11 +52,14 @@ pub struct Capability {
     /// to serializable transaction-level isolation.
     pub select_for_update: bool,
 
+    /// Whether inserts can return values directly from the mutation.
+    pub native_insert_returning: bool,
+
     /// Whether updates can return complete post-update models.
-    pub update_returning_new: bool,
+    pub native_update_returning_new: bool,
 
     /// Whether updates can return complete pre-update models.
-    pub update_returning_old: bool,
+    pub native_update_returning_old: bool,
 
     /// Whether an upsert may target the table's primary key.
     ///
@@ -582,8 +585,9 @@ impl Capability {
         schema_mutations: SchemaMutations::SQLITE,
         cte_with_update: false,
         select_for_update: false,
-        update_returning_new: true,
-        update_returning_old: false,
+        native_insert_returning: true,
+        native_update_returning_new: true,
+        native_update_returning_old: false,
         upsert_primary_key: true,
         upsert_unique: true,
         upsert_branch_assignments: true,
@@ -675,7 +679,7 @@ impl Capability {
         storage_types: StorageTypes::POSTGRESQL,
         schema_mutations: SchemaMutations::POSTGRESQL,
         select_for_update: true,
-        update_returning_old: true,
+        native_update_returning_old: true,
         auto_increment: true,
         max_auto_increment_integer_width: None,
         bigdecimal_implemented: false,
@@ -738,8 +742,9 @@ impl Capability {
         storage_types: StorageTypes::MYSQL,
         schema_mutations: SchemaMutations::MYSQL,
         select_for_update: true,
-        update_returning_new: false,
-        update_returning_old: false,
+        native_insert_returning: false,
+        native_update_returning_new: false,
+        native_update_returning_old: false,
         upsert_primary_key: false,
         upsert_unique: false,
         upsert_branch_assignments: false,
@@ -816,8 +821,9 @@ impl Capability {
         schema_mutations: SchemaMutations::DYNAMODB,
         cte_with_update: false,
         select_for_update: false,
-        update_returning_new: true,
-        update_returning_old: true,
+        native_insert_returning: true,
+        native_update_returning_new: true,
+        native_update_returning_old: true,
         upsert_primary_key: true,
         upsert_unique: false,
         upsert_branch_assignments: false,

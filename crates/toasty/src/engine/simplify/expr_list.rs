@@ -24,9 +24,9 @@ impl Simplify<'_> {
                 return None;
             }
 
-            // Must have Returning::Model
-            match &insert.returning {
-                Some(stmt::Returning::Model { .. }) => {}
+            // Must have ReturningExpr::Model
+            match insert.returning.as_ref().map(|returning| &returning.expr) {
+                Some(stmt::ReturningExpr::Model { .. }) => {}
                 _ => return None,
             }
 

@@ -91,8 +91,8 @@ pub struct Upsert {
     ///
     /// These override shared assignments for the same field and may reference
     /// stored columns or fields projected from an
-    /// [`ExprRow`](super::ExprRow) with [`RowImage::Incoming`](super::RowImage),
-    /// the row proposed by the insert source.
+    /// [`ExprRow::Incoming`](super::ExprRow::Incoming), the row proposed by the
+    /// insert source.
     pub update: Assignments,
 
     /// Whether to update or ignore a conflicting row.

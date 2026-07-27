@@ -398,6 +398,7 @@ impl Type {
         Ok(match (value, self) {
             // Identity
             (value @ Value::String(_), Self::String) => value,
+            (value @ Value::Uuid(_), Self::Uuid) => value,
             // String <-> Uuid
             (Value::Uuid(value), Self::String) => Value::String(value.to_string()),
             (Value::String(value), Self::Uuid) => {

@@ -4,7 +4,7 @@ use crate as toasty;
 use crate::engine::lower::returning::constantize_update_returning;
 use crate::engine::test_util::test_schema_with;
 use crate::schema::{Embed, Model};
-use toasty_core::stmt::{self, Expr, ExprRow, Returning, RowImage, Value};
+use toasty_core::stmt::{self, Expr, ExprRow, Returning, Value};
 
 #[derive(Debug, PartialEq, toasty::Embed)]
 struct Profile {
@@ -59,7 +59,7 @@ fn document_update_returning_constantizes_only_new_values() {
         Expr::cast_from(Expr::Value(profile.clone()), doc_ty, &column.ty),
     );
 
-    let mut returning = Returning::Project(Expr::record_from_vec(vec![raising_expr.clone()]));
+    let mut returning = Returning::project(Expr::record_from_vec(vec![raising_expr.clone()]));
 
     constantize_update_returning(
         stmt::ExprContext::new_with_target(&schema, table),
@@ -70,17 +70,11 @@ fn document_update_returning_constantizes_only_new_values() {
     // Lowering cast then raising cast round-trip to the positional record.
     assert_eq!(
         returning,
-        Returning::Project(Expr::Value(Value::record_from_vec(vec![profile])))
+        Returning::project(Expr::Value(Value::record_from_vec(vec![profile])))
     );
 
-    let expected = Returning::Project(Expr::record([
-        Expr::project(
-            ExprRow::table(column_id.table, RowImage::Old),
-            [column_id.index],
-        ),
-        raising_expr,
-    ]));
-    let mut returning = expected.clone();
+    let old_name = Expr::project(ExprRow::old_table(column_id.table), [column_id.index]);
+    let mut returning = Returning::project(Expr::record([old_name.clone(), raising_expr]));
 
     constantize_update_returning(
         stmt::ExprContext::new_with_target(&schema, table),
@@ -88,5 +82,13 @@ fn document_update_returning_constantizes_only_new_values() {
         &assignments,
     );
 
-    assert_eq!(returning, expected);
+    let stmt::ReturningExpr::Project(Expr::Record(returning)) = returning.expr else {
+        panic!("expected a projected record");
+    };
+    assert_eq!(returning[0], old_name);
+    let mut references_column = false;
+    stmt::visit::for_each_expr(&returning[1], |expr| {
+        references_column |= matches!(expr, Expr::Reference(_));
+    });
+    assert!(!references_column);
 }

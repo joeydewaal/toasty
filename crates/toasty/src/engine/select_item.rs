@@ -14,10 +14,9 @@ pub(crate) enum SelectItem {
     ExprReference(stmt::ExprReference),
 
     /// A column read from a specific row image of an update.
-    RowColumn {
+    OldColumn {
         table: toasty_core::schema::db::TableId,
         column: usize,
-        image: stmt::RowImage,
     },
 
     /// The `COUNT(*)` aggregate. SQL-only.
@@ -30,7 +29,7 @@ impl SelectItem {
     pub(crate) fn as_expr_reference_unwrap(&self) -> &stmt::ExprReference {
         match self {
             SelectItem::ExprReference(r) => r,
-            SelectItem::RowColumn { .. } => {
+            SelectItem::OldColumn { .. } => {
                 panic!("row-image columns do not contain a direct expression reference")
             }
             other => panic!("expected ExprReference, got {other:?}"),
@@ -41,7 +40,7 @@ impl SelectItem {
     pub(crate) fn infer_ty(&self, cx: &stmt::ExprContext<'_>) -> stmt::Type {
         match self {
             SelectItem::ExprReference(expr_reference) => cx.infer_expr_reference_ty(expr_reference),
-            SelectItem::RowColumn { column, .. } => {
+            SelectItem::OldColumn { column, .. } => {
                 cx.infer_expr_reference_ty(&stmt::ExprReference::Column(stmt::ExprColumn {
                     nesting: 0,
                     table: 0,
@@ -56,11 +55,9 @@ impl SelectItem {
     pub(crate) fn to_expr(self) -> stmt::Expr {
         match self {
             SelectItem::ExprReference(expr_reference) => stmt::Expr::from(expr_reference),
-            SelectItem::RowColumn {
-                table,
-                column,
-                image,
-            } => stmt::Expr::project(stmt::ExprRow::table(table, image), [column]),
+            SelectItem::OldColumn { table, column } => {
+                stmt::Expr::project(stmt::ExprRow::old_table(table), [column])
+            }
             SelectItem::CountStar => stmt::Expr::count_star(),
         }
     }
@@ -101,18 +98,13 @@ impl SelectItems {
             .unwrap()
     }
 
-    pub(crate) fn get_index_of_row_column(
+    pub(crate) fn get_index_of_old_column(
         &self,
         table: toasty_core::schema::db::TableId,
         column: usize,
-        image: stmt::RowImage,
     ) -> usize {
         self.0
-            .get_index_of(&SelectItem::RowColumn {
-                table,
-                column,
-                image,
-            })
+            .get_index_of(&SelectItem::OldColumn { table, column })
             .unwrap()
     }
 
@@ -126,7 +118,7 @@ impl SelectItems {
             .0
             .drain(..)
             .map(|item| match item {
-                SelectItem::RowColumn { column, .. } => {
+                SelectItem::OldColumn { column, .. } => {
                     SelectItem::ExprReference(stmt::ExprReference::Column(stmt::ExprColumn {
                         nesting: 0,
                         table: 0,
@@ -153,7 +145,7 @@ impl SelectItems {
             .iter()
             .map(|item| match item {
                 SelectItem::ExprReference(reference) => *reference,
-                SelectItem::RowColumn { column, .. } => {
+                SelectItem::OldColumn { column, .. } => {
                     stmt::ExprReference::Column(stmt::ExprColumn {
                         nesting: 0,
                         table: 0,

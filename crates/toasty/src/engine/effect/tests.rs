@@ -30,7 +30,7 @@ fn simple_update() -> Update {
         filter: Filter::default(),
         condition: Condition::default(),
         returning: None,
-        single: false,
+        selection_single: false,
     }
 }
 
@@ -199,7 +199,7 @@ fn lowered_update_to_table_is_mutating() {
         filter: Filter::default(),
         condition: Condition::default(),
         returning: None,
-        single: false,
+        selection_single: false,
     });
     assert_eq!(classify(&stmt), Effect::Mutating);
 }

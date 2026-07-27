@@ -160,7 +160,6 @@ struct RowAndNested<'a> {
 
 #[derive(Debug)]
 enum Input {
-    Count(u64),
     Value(Vec<stmt::Value>),
 }
 
@@ -177,7 +176,7 @@ impl Exec<'_> {
         for var_id in &action.inputs {
             let response = self.vars.load(*var_id).await?;
             inputs.push(match response.values {
-                Rows::Count(count) => Input::Count(count),
+                Rows::Count(count) => Input::Value(vec![stmt::Value::U64(count)]),
                 Rows::Value(value) => Input::Value(match value {
                     stmt::Value::List(items) => items,
                     value => vec![value],
@@ -192,9 +191,7 @@ impl Exec<'_> {
                 .hash_indexes
                 .iter()
                 .map(|mi| {
-                    let Input::Value(values) = &inputs[mi.source] else {
-                        panic!("HashLookup source must be a Value input, not Count")
-                    };
+                    let Input::Value(values) = &inputs[mi.source];
                     stmt::HashIndex::new(values, &mi.child_projections)
                 })
                 .collect(),
@@ -202,9 +199,7 @@ impl Exec<'_> {
                 .sort_indexes
                 .iter()
                 .map(|mi| {
-                    let Input::Value(values) = &inputs[mi.source] else {
-                        panic!("SortLookup source must be a Value input, not Count")
-                    };
+                    let Input::Value(values) = &inputs[mi.source];
                     stmt::SortedIndex::new(values, &mi.child_projections)
                 })
                 .collect(),
@@ -213,40 +208,14 @@ impl Exec<'_> {
         // Load the root rows
         let mut merged_rows = vec![];
 
-        match &inputs[action.root.source] {
-            Input::Count(count) => {
-                let row_stack = RowStack {
-                    parent: None,
-                    // Bit of a hack
-                    row: &stmt::Value::Null,
-                    position: 0,
-                };
-
-                for _ in 0..*count {
-                    merged_rows.push(self.merge_nested_row(
-                        &row_stack,
-                        &action.root,
-                        &inputs,
-                        &indices,
-                    )?);
-                }
-            }
-            Input::Value(root_rows) => {
-                // Iterate over each record to perform the nested merge
-                for row in root_rows {
-                    let stack = RowStack {
-                        parent: None,
-                        row,
-                        position: 0,
-                    };
-                    merged_rows.push(self.merge_nested_row(
-                        &stack,
-                        &action.root,
-                        &inputs,
-                        &indices,
-                    )?);
-                }
-            }
+        let Input::Value(root_rows) = &inputs[action.root.source];
+        for row in root_rows {
+            let stack = RowStack {
+                parent: None,
+                row,
+                position: 0,
+            };
+            merged_rows.push(self.merge_nested_row(&stack, &action.root, &inputs, &indices)?);
         }
 
         // Store the output
@@ -299,9 +268,7 @@ impl Exec<'_> {
 
         for nested_child in &level.nested {
             // Find the batch-loaded input
-            let Input::Value(nested_input) = &inputs[nested_child.level.source] else {
-                todo!("input={:#?}", inputs[nested_child.level.source])
-            };
+            let Input::Value(nested_input) = &inputs[nested_child.level.source];
             let mut nested_rows_projected = vec![];
 
             // Process a single matching child row: recurse and collect the result.
@@ -357,8 +324,6 @@ impl Exec<'_> {
             }
 
             nested.push(if nested_child.single {
-                assert!(nested_rows_projected.len() <= 1, "TODO: error handling");
-
                 if let Some(row) = nested_rows_projected.into_iter().next() {
                     row
                 } else {

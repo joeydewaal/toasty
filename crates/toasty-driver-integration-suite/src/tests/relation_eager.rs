@@ -457,6 +457,121 @@ pub async fn eager_relation_long_cycle_is_rejected(t: &mut Test) -> Result<()> {
     Ok(())
 }
 
+#[driver_test(requires(native_update_returning_new))]
+pub async fn update_returning_loads_eager_belongs_to(t: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        id: uuid::Uuid,
+        name: String,
+    }
+
+    #[derive(Debug, toasty::Model)]
+    struct Post {
+        #[key]
+        id: uuid::Uuid,
+        title: String,
+
+        #[index]
+        user_id: uuid::Uuid,
+
+        #[belongs_to(key = user_id, references = id)]
+        user: User,
+    }
+
+    let mut db = t.setup_db(models!(User, Post)).await;
+    let user_id = uuid::Uuid::from_u128(1);
+    let post_id = uuid::Uuid::from_u128(2);
+
+    insert_row::<User>(
+        &mut db,
+        vec![
+            stmt::Value::Uuid(user_id).into(),
+            stmt::Value::from("Alice").into(),
+        ],
+    )
+    .await?;
+    insert_row::<Post>(
+        &mut db,
+        vec![
+            stmt::Value::Uuid(post_id).into(),
+            stmt::Value::from("post").into(),
+            stmt::Value::Uuid(user_id).into(),
+            stmt::Value::Null.into(),
+        ],
+    )
+    .await?;
+
+    let post = Post::filter_by_user_id(user_id)
+        .update()
+        .title("updated")
+        .returning_one()
+        .exec(&mut db)
+        .await?;
+
+    assert_eq!(post.user.id, user_id);
+
+    Ok(())
+}
+
+#[driver_test(requires(native_update_returning_old))]
+pub async fn update_returning_old_loads_eager_belongs_to(t: &mut Test) -> Result<()> {
+    #[derive(Debug, toasty::Model)]
+    struct User {
+        #[key]
+        id: uuid::Uuid,
+        name: String,
+    }
+
+    #[derive(Debug, toasty::Model)]
+    struct Post {
+        #[key]
+        id: uuid::Uuid,
+        title: String,
+
+        #[index]
+        user_id: uuid::Uuid,
+
+        #[belongs_to(key = user_id, references = id)]
+        user: User,
+    }
+
+    let mut db = t.setup_db(models!(User, Post)).await;
+    let user_id = uuid::Uuid::from_u128(1);
+    let post_id = uuid::Uuid::from_u128(2);
+
+    insert_row::<User>(
+        &mut db,
+        vec![
+            stmt::Value::Uuid(user_id).into(),
+            stmt::Value::from("Alice").into(),
+        ],
+    )
+    .await?;
+    insert_row::<Post>(
+        &mut db,
+        vec![
+            stmt::Value::Uuid(post_id).into(),
+            stmt::Value::from("before").into(),
+            stmt::Value::Uuid(user_id).into(),
+            stmt::Value::Null.into(),
+        ],
+    )
+    .await?;
+
+    let post = Post::filter_by_user_id(user_id)
+        .update()
+        .title("after")
+        .returning_one_old()
+        .exec(&mut db)
+        .await?;
+
+    assert_eq!(post.title, "before");
+    assert_eq!(post.user.id, user_id);
+
+    Ok(())
+}
+
 async fn insert_row<M: Model>(db: &mut toasty::Db, fields: Vec<stmt::Expr>) -> Result<()> {
     let insert = stmt::Insert {
         target: stmt::InsertTarget::Model(<M as toasty::schema::Model>::id()),

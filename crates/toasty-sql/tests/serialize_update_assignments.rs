@@ -114,7 +114,7 @@ fn update_with(assignments: Assignments) -> stmt::Statement {
         filter: Filter::ALL,
         condition: stmt::Condition::default(),
         returning: None,
-        single: false,
+        selection_single: false,
     }
     .into()
 }
@@ -262,10 +262,7 @@ fn upsert_incoming_projection_postgresql() {
     let mut assignments = Assignments::default();
     assignments.set(
         1usize,
-        Expr::project(
-            ExprRow::table(TableId(0), stmt::RowImage::Incoming),
-            [1usize],
-        ),
+        Expr::project(ExprRow::incoming_table(TableId(0)), [1usize]),
     );
 
     expect![[r#"INSERT INTO "users" ("id", "name", "tags") VALUES (1, 'a', (7)) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name";"#]].assert_eq(&render(

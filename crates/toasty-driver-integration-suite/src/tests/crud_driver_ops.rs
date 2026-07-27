@@ -49,7 +49,7 @@ pub async fn basic_crud(test: &mut Test) -> Result<()> {
         // ret: None,
     }));
 
-    if driver_test_cfg!(id_u64) && test.capability().update_returning_new {
+    if driver_test_cfg!(id_u64) && test.capability().native_update_returning_new {
         assert_struct!(op, Operation::QuerySql({
             ret: Some([Type::U64]),
             last_insert_id_hack: None,

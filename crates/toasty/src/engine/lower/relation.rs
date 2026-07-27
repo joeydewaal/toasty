@@ -43,9 +43,7 @@ trait RelationSource: std::fmt::Debug {
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr);
 
     /// Whether relation mutations contribute to the source's return value.
-    fn needs_returning_field(&self) -> bool {
-        true
-    }
+    fn needs_returning_field(&self) -> bool;
 
     /// Whether the source might produce zero rows. When true, relation
     /// mutations must be wrapped in a conditional to avoid FK updates when
@@ -323,7 +321,7 @@ impl LowerStatement<'_, '_> {
                 let stmt::ExprSet::Select(select) = &mut query.body else {
                     todo!()
                 };
-                select.returning = stmt::Returning::Project(stmt::Expr::record([1]));
+                select.returning = stmt::Returning::project(stmt::Expr::record([1]));
                 query
             }));
         }
@@ -564,13 +562,13 @@ impl LowerStatement<'_, '_> {
                 // "belongs" in this field. We translate it to the key to set
                 // the FK fields in the source model.
                 assert!(matches!(
-                    insert.returning,
-                    Some(stmt::Returning::Model { .. })
+                    insert.returning.as_ref().map(|returning| &returning.expr),
+                    Some(stmt::ReturningExpr::Model { .. })
                 ));
 
                 // Previous value of returning does nothing in this
                 // context
-                insert.returning = Some(stmt::Returning::Project(stmt::Expr::record(
+                insert.returning = Some(stmt::Returning::project(stmt::Expr::record(
                     belongs_to
                         .foreign_key
                         .fields
@@ -583,8 +581,8 @@ impl LowerStatement<'_, '_> {
 
                 let returning = stmt_info.stmt.as_ref().unwrap().returning().expect("bug");
 
-                let expr = match returning {
-                    stmt::Returning::Expr(expr) if expr.is_const() => expr.clone(),
+                let expr = match &returning.expr {
+                    stmt::ReturningExpr::Expr(expr) if expr.is_const() => expr.clone(),
                     _ => {
                         // Make sure the source statement returns a single record
                         debug_assert!(match &**stmt_info.stmt.as_ref().unwrap() {
@@ -814,6 +812,10 @@ impl RelationSource for &stmt::Delete {
         unimplemented!("delete statements do not need to update field values");
     }
 
+    fn needs_returning_field(&self) -> bool {
+        false
+    }
+
     fn needs_existence_check(&self) -> bool {
         false
     }
@@ -833,7 +835,11 @@ impl RelationSource for UpdateRelationSource<'_> {
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
         debug_assert!(self.returning_changed);
 
-        let Some(stmt::Returning::Project(stmt::Expr::Cast(expr_cast), ..)) = self.returning else {
+        let Some(stmt::Returning {
+            expr: stmt::ReturningExpr::Project(stmt::Expr::Cast(expr_cast)),
+            ..
+        }) = self.returning
+        else {
             todo!("UpdateRelationSource={self:#?}")
         };
 
@@ -887,16 +893,20 @@ impl RelationSource for InsertRelationSource<'_> {
     }
 
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
-        let record = match self.returning {
-            Some(stmt::Returning::Project(stmt::Expr::Record(record), ..)) => record,
-            Some(stmt::Returning::Expr(stmt::Expr::List(rows))) => {
+        let record = match self.returning.as_mut().map(|returning| &mut returning.expr) {
+            Some(stmt::ReturningExpr::Project(stmt::Expr::Record(record))) => record,
+            Some(stmt::ReturningExpr::Expr(stmt::Expr::List(rows))) => {
                 rows.items[self.index].as_record_mut_unwrap()
             }
-            Some(stmt::Returning::Expr(stmt::Expr::Record(record))) => record,
+            Some(stmt::ReturningExpr::Expr(stmt::Expr::Record(record))) => record,
             _ => todo!("InsertRelationSource={self:#?}"),
         };
 
         set_returning_slot(record, field.id.index, expr, field.deferred);
+    }
+
+    fn needs_returning_field(&self) -> bool {
+        true
     }
 
     fn needs_existence_check(&self) -> bool {

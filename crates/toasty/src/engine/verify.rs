@@ -260,7 +260,7 @@ impl stmt::Visit for Verify<'_, '_> {
         }
 
         if let Some(returning) = &i.returning {
-            if returning.uses_old() && !self.capability.update_returning_old {
+            if returning.uses_old() && !self.capability.native_update_returning_old {
                 self.record(Error::unsupported_feature(format!(
                     "{} does not support returning old values from updates",
                     self.capability.driver_name
@@ -268,7 +268,7 @@ impl stmt::Visit for Verify<'_, '_> {
                 return;
             }
 
-            if returning.uses_new() && !self.capability.update_returning_new {
+            if returning.uses_new() && !self.capability.native_update_returning_new {
                 self.record(Error::unsupported_feature(format!(
                     "{} does not support returning new values from updates",
                     self.capability.driver_name
@@ -717,7 +717,7 @@ mod tests {
             filter: Filter::ALL,
             condition: Condition::default(),
             returning: Some(returning),
-            single: false,
+            selection_single: false,
         }
         .into()
     }
@@ -797,13 +797,7 @@ mod tests {
 
     #[test]
     fn update_returning_new_rejected_on_mysql() {
-        let stmt = update_returning(
-            toasty_core::schema::app::ModelId(0),
-            Returning::Model {
-                include: vec![],
-                old: false,
-            },
-        );
+        let stmt = update_returning(toasty_core::schema::app::ModelId(0), Returning::model());
         let err =
             verify_with(&Capability::MYSQL, stmt).expect_err("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
@@ -811,13 +805,7 @@ mod tests {
 
     #[test]
     fn update_returning_old_rejected_on_sqlite() {
-        let stmt = update_returning(
-            toasty_core::schema::app::ModelId(0),
-            Returning::Model {
-                include: vec![],
-                old: true,
-            },
-        );
+        let stmt = update_returning(toasty_core::schema::app::ModelId(0), Returning::old_model());
         let err =
             verify_with(&Capability::SQLITE, stmt).expect_err("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
@@ -834,10 +822,7 @@ mod tests {
         }
 
         let schema = test_schema_with(&[User::schema()]);
-        let returning = Returning::Model {
-            include: vec![],
-            old: true,
-        };
+        let returning = Returning::old_model();
         assert!(
             verify_with_schema(
                 &schema,

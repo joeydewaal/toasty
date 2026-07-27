@@ -174,7 +174,7 @@ pub struct FieldPrimitive {
     /// containing this primitive) down to this primitive within the embedded
     /// type hierarchy. Identity for root-level primitives.
     ///
-    /// Used when building `Returning::Changed` expressions: we emit
+    /// Used when building `Returning::changed()` expressions: we emit
     /// `project(ref_self_field(root_field_id), sub_projection)` so the
     /// existing lowering and constantization pipeline resolves it to the
     /// correct column value without needing to carry assignment expressions.

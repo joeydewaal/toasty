@@ -22,7 +22,7 @@ pub async fn query_update_returns_affected_count(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_return_all(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -51,7 +51,7 @@ pub async fn query_update_return_all(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -101,6 +101,34 @@ pub async fn query_update_return_first_and_one(t: &mut Test) -> Result<()> {
     Ok(())
 }
 
+#[driver_test(
+    id(ID),
+    scenario(crate::scenarios::user_with_age),
+    requires(native_update_returning_new)
+)]
+pub async fn batch_query_update_return_first_and_one(t: &mut Test) -> Result<()> {
+    let mut db = setup(t).await;
+    toasty::create!(User::[
+        { name: "Alice", age: 0 },
+        { name: "Bob", age: 0 },
+    ])
+    .exec(&mut db)
+    .await?;
+
+    let (first, one): (Option<User>, User) = toasty::batch((
+        User::filter_by_age(0).update().age(1).returning_first(),
+        User::filter_by_age(1).update().age(2).returning_one(),
+    ))
+    .exec(&mut db)
+    .await?;
+
+    assert_eq!(first.unwrap().age, 1);
+    assert_eq!(one.age, 2);
+    assert_eq!(User::filter_by_age(2).exec(&mut db).await?.len(), 2);
+
+    Ok(())
+}
+
 #[driver_test(scenario(crate::scenarios::fixed_item_name), requires(scan))]
 pub async fn ordered_updates_are_rejected(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -131,7 +159,7 @@ pub async fn ordered_updates_are_rejected(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::composite_has_many_belongs_to),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_return_all_by_partial_composite_key(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -160,7 +188,7 @@ pub async fn query_update_return_all_by_partial_composite_key(t: &mut Test) -> R
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
-    requires(update_returning_old)
+    requires(native_update_returning_old)
 )]
 pub async fn query_update_return_old(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -187,7 +215,7 @@ pub async fn query_update_return_old(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
-    requires(update_returning_old)
+    requires(native_update_returning_old)
 )]
 pub async fn query_update_return_all_and_first_old(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -231,7 +259,7 @@ pub async fn query_update_return_all_and_first_old(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_with_age),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_return_one_new(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -255,7 +283,7 @@ pub async fn query_update_return_one_new(t: &mut Test) -> Result<()> {
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::has_many_belongs_to),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_return_model_leaves_relations_unloaded(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -299,7 +327,7 @@ pub async fn query_update_relation_only_returns_zero(t: &mut Test) -> Result<()>
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::has_many_belongs_to),
-    requires(update_returning_new)
+    requires(native_update_returning_new)
 )]
 pub async fn query_update_relation_only_returns_model(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -341,7 +369,7 @@ pub async fn query_update_missing_exact_key_returns_zero(t: &mut Test) -> Result
     Ok(())
 }
 
-#[driver_test(requires(update_returning_new))]
+#[driver_test(requires(native_update_returning_new))]
 pub async fn query_update_missing_exact_key_returns_no_models(t: &mut Test) -> Result<()> {
     #[derive(Debug, toasty::Model)]
     struct User {
@@ -379,7 +407,7 @@ pub async fn query_update_missing_exact_key_returns_no_models(t: &mut Test) -> R
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_unique_email_with_name),
-    requires(and(update_returning_new, not(sql)))
+    requires(and(native_update_returning_new, not(sql)))
 )]
 pub async fn query_update_return_unique_field_rejected_before_writes(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;
@@ -412,7 +440,7 @@ pub async fn query_update_return_unique_field_rejected_before_writes(t: &mut Tes
 #[driver_test(
     id(ID),
     scenario(crate::scenarios::user_unique_email_with_name),
-    requires(and(update_returning_new, not(sql)))
+    requires(and(native_update_returning_new, not(sql)))
 )]
 pub async fn query_update_return_unique_field_rejected_without_matches(t: &mut Test) -> Result<()> {
     let mut db = setup(t).await;

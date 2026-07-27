@@ -220,7 +220,11 @@ impl LowerStatement<'_, '_> {
         single: bool,
     ) {
         // If there is no returning statement, there is nothing to convert
-        let Some(stmt::Returning::Project(projection)) = returning else {
+        let Some(stmt::Returning {
+            expr: stmt::ReturningExpr::Project(projection),
+            ..
+        }) = returning
+        else {
             return;
         };
 
@@ -262,7 +266,7 @@ impl LowerStatement<'_, '_> {
             converted.push(converted_row);
         }
 
-        *returning = Some(stmt::Returning::Expr(if single {
+        *returning = Some(stmt::Returning::expression(if single {
             assert!(converted.len() == 1);
             converted.into_iter().next().unwrap()
         } else {

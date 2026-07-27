@@ -69,7 +69,7 @@ impl_into_statement_for_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8; 8; 0, 1, 2, 3, 4,
 ///
 /// Mutation statements (delete, update) without a returning clause default to
 /// returning a count. In a batch, every sub-statement must produce a value, so
-/// we set an empty record returning (`Returning::Expr(Expr::record([]))`)
+/// we set an empty record returning (`Returning::expression(Expr::record([]))`)
 /// which represents unit.
 fn ensure_batch_returning(stmt: &mut stmt::Statement) {
     if !stmt.is_query() && stmt.returning().is_none() {

@@ -35,7 +35,7 @@ impl<T> Update<T> {
     /// Create a new update statement from the given query selection.
     ///
     /// All records matched by `selection` will be updated. By default the
-    /// update returns the changed records (`Returning::Changed`).
+    /// update returns the changed records (`Returning::changed()`).
     ///
     /// # Examples
     ///
@@ -52,7 +52,12 @@ impl<T> Update<T> {
     /// ```
     pub fn new(selection: Query<T>) -> Self {
         let mut stmt = selection.untyped.update();
-        stmt.returning = Some(stmt::Returning::Changed);
+        let returning = stmt::Returning::changed();
+        stmt.returning = Some(if stmt.selection_single {
+            returning.single()
+        } else {
+            returning
+        });
 
         Self {
             untyped: stmt,
@@ -213,15 +218,6 @@ impl<T> Update<T> {
     #[doc(hidden)]
     pub fn with_returning<R>(mut self, returning: stmt::Returning) -> Update<R> {
         self.untyped.returning = Some(returning);
-        self.untyped.single = false;
-        Update::from_untyped(self.untyped)
-    }
-
-    /// Change the typed result to a single value.
-    #[doc(hidden)]
-    pub fn with_returning_single<R>(mut self, returning: stmt::Returning) -> Update<R> {
-        self.untyped.returning = Some(returning);
-        self.untyped.single = true;
         Update::from_untyped(self.untyped)
     }
 
@@ -302,8 +298,8 @@ impl<M: Model> Default for Update<M> {
                 assignments: stmt::Assignments::default(),
                 filter: stmt::Filter::new(stmt::Expr::from(false)),
                 condition: stmt::Condition::default(),
-                returning: Some(stmt::Returning::Changed),
-                single: true,
+                returning: Some(stmt::Returning::changed().single()),
+                selection_single: true,
             },
             _p: PhantomData,
         }

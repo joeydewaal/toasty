@@ -146,12 +146,6 @@ impl Connection {
             })
             .collect::<Vec<_>>();
 
-        if op.returning.is_some() && !unique_indices.is_empty() {
-            return Err(toasty_core::Error::unsupported_feature(
-                "DynamoDB cannot return models from updates that require TransactWriteItems",
-            ));
-        }
-
         let filter_expression = match (&op.filter, &op.condition) {
             (Some(filter), None) => Some(ddb_expression(&cx, &mut expr_attrs, false, filter)),
             (None, Some(condition)) => Some(ddb_expression(&cx, &mut expr_attrs, false, condition)),
@@ -172,6 +166,11 @@ impl Connection {
 
         let mut update_expression_set = String::new();
         let mut update_expression_remove = String::new();
+
+        // Bound value per assigned column index. The transaction path cannot
+        // request UPDATED_NEW, so assigned returning columns are seeded from
+        // these values instead.
+        let mut bound_values: HashMap<usize, &stmt::Value> = HashMap::new();
 
         for (projection, assignment) in op.assignments.iter() {
             enum AssignKind {
@@ -208,6 +207,7 @@ impl Connection {
             };
 
             let column_ref = table.resolve(projection);
+            bound_values.insert(column_ref.id.index, value);
             let column = expr_attrs.column(column_ref).to_string();
 
             match kind {
@@ -290,7 +290,13 @@ impl Connection {
             for column_id in returning.columns() {
                 let column = schema.column(*column_id);
                 returning_columns.push(column);
-                ret.push(stmt::Value::Null);
+                ret.push(
+                    (!returning.is_old())
+                        .then(|| bound_values.get(&column_id.index))
+                        .flatten()
+                        .map(|value| (*value).clone())
+                        .unwrap_or(stmt::Value::Null),
+                );
             }
         }
 
@@ -424,11 +430,10 @@ impl Connection {
                     .map_err(toasty_core::Error::driver_operation_failed)?;
 
                 let Some(mut curr_unique_values) = res.item else {
-                    return Ok(if op.returning.is_some() {
-                        ExecResponse::empty_value_stream()
-                    } else {
-                        ExecResponse::count(0)
-                    });
+                    return Err(toasty_core::Error::record_not_found(format!(
+                        "table={} key={:?}",
+                        table.name, key
+                    )));
                 };
 
                 // Resolve each unique-column assignment to a concrete post-update
@@ -478,6 +483,12 @@ impl Connection {
                             }
                         };
                         resolved_unique_values.insert(column.id, resolved);
+                    }
+                }
+
+                for (idx, column) in returning_columns.iter().enumerate() {
+                    if let Some(value) = resolved_unique_values.get(&column.id) {
+                        ret[idx] = value.clone();
                     }
                 }
 
@@ -553,12 +564,6 @@ impl Connection {
                         }
                     }
                 } else {
-                    if op.returning.is_some() {
-                        return Err(toasty_core::Error::unsupported_feature(
-                            "DynamoDB cannot return models from updates that require TransactWriteItems",
-                        ));
-                    }
-
                     assert!(
                         updated_unique_attrs.len() + set_unique_attrs.len() == 1,
                         "TODO: support more than one unique attr"

@@ -77,7 +77,7 @@ impl LowerStatement<'_, '_> {
         // out (e.g. two comments on the same article) — matching a direct via
         // query's distinct-target semantics.
         let mut select = stmt::Select::new(join.build_source(schema), filter);
-        select.returning = stmt::Returning::Project(returning);
+        select.returning = stmt::Returning::project(returning);
         select.distinct = true;
 
         let mut query = stmt::Query::builder(select).build();

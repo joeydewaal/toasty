@@ -1432,15 +1432,15 @@ pub fn visit_returning<V>(v: &mut V, node: &Returning)
 where
     V: Visit + ?Sized,
 {
-    match node {
-        Returning::Model { include, .. } => {
+    match &node.expr {
+        crate::stmt::ReturningExpr::Model { include, .. } => {
             for inc in include {
                 v.visit_include(inc);
             }
         }
-        Returning::Changed | Returning::Count => {}
-        Returning::Project(expr) => v.visit_expr(expr),
-        Returning::Expr(expr) => v.visit_expr(expr),
+        crate::stmt::ReturningExpr::Changed | crate::stmt::ReturningExpr::Count => {}
+        crate::stmt::ReturningExpr::Project(expr) => v.visit_expr(expr),
+        crate::stmt::ReturningExpr::Expr(expr) => v.visit_expr(expr),
     }
 }
 

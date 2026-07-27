@@ -40,14 +40,15 @@ impl ToSql for &stmt::Expr {
                 serialize_json_extract(f, func);
             }
             stmt::Expr::Project(project) if let stmt::Expr::Row(row) = project.base.as_ref() => {
-                let stmt::ExprRow::Table { table, image } = row else {
+                let target = row.target();
+                let stmt::ExprRowTarget::Table(table) = target else {
                     panic!("row projection was not lowered")
                 };
                 let [column] = project.projection.as_slice() else {
                     panic!("lowered row projection must reference one column")
                 };
                 let name = f.serializer.column_name(ColumnId {
-                    table: *table,
+                    table,
                     index: *column,
                 });
                 // Neither qualifier is flavor-gated here. `excluded` and `old`
@@ -55,14 +56,11 @@ impl ToSql for &stmt::Expr {
                 // but a backend that lacks either never reaches this point:
                 // `engine::verify` rejects the statement first, on the
                 // `upsert_*` flags for a proposed row and on
-                // `update_returning_old` for a pre-update row. The surrounding
+                // `native_update_returning_old` for a pre-update row. The surrounding
                 // `ON CONFLICT` clause is unconditional for the same reason.
-                match image {
-                    stmt::RowImage::Incoming => fmt!(f, "excluded." name),
-                    // The post-update image is the statement's own row, so it
-                    // needs no qualifier.
-                    stmt::RowImage::New => fmt!(f, name),
-                    stmt::RowImage::Old => fmt!(f, "old." name),
+                match row {
+                    stmt::ExprRow::Incoming(_) => fmt!(f, "excluded." name),
+                    stmt::ExprRow::Old(_) => fmt!(f, "old." name),
                 }
             }
             stmt::Expr::Row(_) => panic!("statement-supplied row must be projected"),

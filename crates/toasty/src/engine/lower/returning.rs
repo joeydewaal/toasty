@@ -27,7 +27,7 @@ enum ConstantizeSource<'a> {
 }
 
 impl LowerStatement<'_, '_> {
-    /// Shape `Returning::Model` for the statement kind before include lowering.
+    /// Shape `ReturningExpr::Model` for the statement kind before include lowering.
     ///
     /// Plain relation fields are implicit includes, except local `has_many` /
     /// `has_one` fields during insert returning. Those slots are filled from
@@ -97,7 +97,7 @@ impl LowerStatement<'_, '_> {
     ///
     /// Can be constantized to:
     /// ```text
-    /// stmt::Returning::Expr(vec![
+    /// stmt::Returning::expression(vec![
     ///     Record { id: '123', name: 'Alice' },
     ///     Record { id: '456', name: 'Bob' },
     /// ])
@@ -121,8 +121,8 @@ impl LowerStatement<'_, '_> {
     ///    - For each INSERT row, evaluate the RETURNING projection
     ///    - This produces a `stmt::Value` for each row
     ///
-    /// 3. **Replace** the `stmt::Returning::Project` expression with
-    ///    `stmt::Returning::Expr(values)`
+    /// 3. **Replace** the `stmt::ReturningExpr::Project` expression with
+    ///    `stmt::Returning::expression(values)`
     ///    - Single-row inserts return a single value
     ///    - Multi-row inserts return a list of values
     ///
@@ -142,15 +142,15 @@ impl LowerStatement<'_, '_> {
         returning: &mut stmt::Returning,
         source: &stmt::Query,
     ) {
-        match returning {
-            stmt::Returning::Project(project) => {
+        match &mut returning.expr {
+            stmt::ReturningExpr::Project(project) => {
                 if let Some(xformed_returning) =
                     self.constantize_insert_returning_projection(project, source)
                 {
-                    *returning = xformed_returning;
+                    returning.expr = xformed_returning.expr;
                 }
             }
-            stmt::Returning::Expr(expr) => self.constantize_insert_returning_expr(expr, source),
+            stmt::ReturningExpr::Expr(expr) => self.constantize_insert_returning_expr(expr, source),
             _ => {}
         }
     }
@@ -269,7 +269,7 @@ impl LowerStatement<'_, '_> {
             }
 
             // Replace the expression-based RETURNING with a constant value
-            Some(stmt::Returning::Expr(if source.single {
+            Some(stmt::Returning::expression(if source.single {
                 // Single row insert: return just the one value
                 constantized
                     .into_iter()
@@ -361,10 +361,6 @@ pub(super) fn constantize_update_returning(
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
 ) {
-    if returning.uses_old() {
-        return;
-    }
-
     let Some(project) = returning.as_project_mut() else {
         // Already a constant value (e.g., empty record for batch
         // unit-returning); nothing to constantize.

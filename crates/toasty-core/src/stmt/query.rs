@@ -147,7 +147,7 @@ impl Query {
         };
 
         assert!(select.source.is_model());
-        let single = self.single;
+        let selection_single = self.single;
 
         stmt::Update {
             target: UpdateTarget::Query(Box::new(self)),
@@ -155,7 +155,7 @@ impl Query {
             filter: Filter::default(),
             condition: stmt::Condition::default(),
             returning: None,
-            single,
+            selection_single,
         }
     }
 
@@ -313,16 +313,16 @@ impl QueryBuilder {
         self
     }
 
-    /// Sets the returning clause to `Returning::Project` containing the given
+    /// Sets the returning clause to `ReturningExpr::Project` containing the given
     /// expression.
     pub fn returning_project(self, expr: impl Into<Expr>) -> Self {
-        self.returning(Returning::Project(expr.into()))
+        self.returning(Returning::project(expr.into()))
     }
 
-    /// Sets the returning clause to `Returning::Expr` containing the given
+    /// Sets the returning clause to `ReturningExpr::Expr` containing the given
     /// expression.
     pub fn returning_expr(self, expr: impl Into<Expr>) -> Self {
-        self.returning(Returning::Expr(expr.into()))
+        self.returning(Returning::expression(expr.into()))
     }
 
     /// Consumes this builder and returns the constructed [`Query`].

@@ -118,7 +118,7 @@ fn make_query(
     locks: Vec<Lock>,
 ) -> stmt::Statement {
     let select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0)])),
+        returning: Returning::project(Expr::record([col(0, 0)])),
         source: users_source(),
         filter,
         distinct: false,
@@ -160,7 +160,7 @@ fn select_distinct() {
     // directly. `render` consumes the statement, so rebuild it per flavor.
     let distinct_query = || {
         let select = Select {
-            returning: Returning::Project(Expr::record([col(0, 0)])),
+            returning: Returning::project(Expr::record([col(0, 0)])),
             source: users_source(),
             filter: Filter::ALL,
             distinct: true,

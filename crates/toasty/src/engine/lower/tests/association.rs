@@ -5,8 +5,8 @@ use toasty_core::{
     driver::Capability,
     schema::{Builder, app, app::FieldId, app::ModelId},
     stmt::{
-        self, Association, Expr, ExprContext, ExprInSubquery, Path, Projection, Query, Returning,
-        SourceModel, Value,
+        self, Association, Expr, ExprContext, ExprInSubquery, Path, Projection, Query, SourceModel,
+        Value,
     },
 };
 
@@ -222,7 +222,7 @@ fn multi_step_via_unfolds_into_nested_in_subqueries() {
         stmt::Source::Model(SourceModel { id, via: None }) if *id == s.post_model
     ));
 
-    let Returning::Project(project) = &post_select.returning else {
+    let stmt::ReturningExpr::Project(project) = &post_select.returning.expr else {
         panic!("expected post subquery to project its returning");
     };
     assert!(matches!(

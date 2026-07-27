@@ -84,6 +84,7 @@ impl Engine {
         connection: &mut dyn Connection,
         plan: ExecPlan,
         in_transaction: bool,
+        single: bool,
     ) -> Result<ExecResponse> {
         let mut exec = Exec {
             engine: self,
@@ -143,6 +144,7 @@ impl Engine {
             tracing::trace!("final result from var {:?}:\n{:#?}", returning, response);
 
             let value_stream = match response.values {
+                Rows::Count(_) if single => ValueStream::default(),
                 Rows::Count(count) => return Ok(ExecResponse::count(count)),
                 Rows::Value(stmt::Value::List(items)) => ValueStream::from_vec(items),
                 Rows::Value(value) => ValueStream::from_vec(vec![value]),

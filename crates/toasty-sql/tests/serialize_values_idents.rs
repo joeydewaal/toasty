@@ -101,7 +101,7 @@ fn select_id_from_users() -> stmt::Statement {
         }],
     });
     let select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0)])),
+        returning: Returning::project(Expr::record([col(0, 0)])),
         source,
         filter: Filter::ALL,
         distinct: false,
@@ -241,7 +241,7 @@ fn select_from_cte() -> stmt::Statement {
             }],
         });
         let select = Select {
-            returning: Returning::Project(Expr::record([col(0, 0)])),
+            returning: Returning::project(Expr::record([col(0, 0)])),
             source,
             filter: Filter::ALL,
             distinct: false,
@@ -260,7 +260,7 @@ fn select_from_cte() -> stmt::Statement {
         }],
     });
     let outer_select = Select {
-        returning: Returning::Project(Expr::record([col(0, 0)])),
+        returning: Returning::project(Expr::record([col(0, 0)])),
         source: outer_source,
         filter: Filter::ALL,
         distinct: false,

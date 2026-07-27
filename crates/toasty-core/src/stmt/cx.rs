@@ -411,7 +411,7 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             Statement::Update(stmt) => stmt
                 .returning
                 .as_ref()
-                .map(|returning| cx.infer_returning_ty(returning, args, stmt.single))
+                .map(|returning| cx.infer_returning_ty(returning, args, returning.is_single()))
                 .unwrap_or(Type::Unit),
         }
     }
@@ -419,8 +419,8 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
     fn infer_returning_ty(&self, returning: &Returning, args: &[Type], single: bool) -> Type {
         let arg_ty_stack = ArgTyStack::new(args);
 
-        match returning {
-            Returning::Model { .. } => {
+        match &returning.expr {
+            crate::stmt::ReturningExpr::Model { .. } => {
                 let ty = Type::Model(
                     self.target
                         .model_id()
@@ -429,14 +429,16 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
 
                 if single { ty } else { Type::list(ty) }
             }
-            Returning::Changed => todo!(),
-            Returning::Count => Type::U64,
-            Returning::Project(expr) => {
+            crate::stmt::ReturningExpr::Changed => todo!(),
+            crate::stmt::ReturningExpr::Count => Type::U64,
+            crate::stmt::ReturningExpr::Project(expr) => {
                 let ty = self.infer_expr_ty2(&arg_ty_stack, expr, false);
 
                 if single { ty } else { Type::list(ty) }
             }
-            Returning::Expr(expr) => self.infer_expr_ty2(&arg_ty_stack, expr, true),
+            crate::stmt::ReturningExpr::Expr(expr) => {
+                self.infer_expr_ty2(&arg_ty_stack, expr, true)
+            }
         }
     }
 
@@ -577,10 +579,10 @@ impl<'a, T: Resolve> ExprContext<'a, T> {
             Expr::Func(ExprFunc::Count(_)) => Type::U64,
             Expr::Func(ExprFunc::LastInsertId(_)) => Type::I64,
             Expr::Func(ExprFunc::JsonExtract(func)) => func.ty.clone(),
-            Expr::Row(row) => match row {
-                super::ExprRow::Model { model, .. } => Type::Model(*model),
-                super::ExprRow::Table { table, .. } => {
-                    let table = self.schema.table(*table).unwrap_or_else(|| {
+            Expr::Row(row) => match row.target() {
+                super::ExprRowTarget::Model(model) => Type::Model(model),
+                super::ExprRowTarget::Table(table) => {
+                    let table = self.schema.table(table).unwrap_or_else(|| {
                         panic!("row table {table:?} is not present in the schema")
                     });
                     Type::Record(

@@ -1,62 +1,54 @@
 use super::Expr;
 use crate::schema::{app::ModelId, db::TableId};
 
-/// Identifies which row image a [`ExprRow`] refers to.
+/// Identifies the model or table belonging to an [`ExprRow`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RowImage {
-    /// The row proposed by an upsert's create branch, rather than the row
-    /// already stored in the conflicting row. Serializes to the backend's
-    /// proposed-row relation, such as PostgreSQL's `EXCLUDED`.
-    Incoming,
+pub enum ExprRowTarget {
+    /// An application model before lowering.
+    Model(ModelId),
 
-    /// The row before an update.
-    Old,
-
-    /// The row after an update.
-    New,
+    /// A database table after lowering.
+    Table(TableId),
 }
 
 /// A qualified row made available to an expression by the surrounding statement.
 ///
 /// Projecting a field from this expression references that field in the named
-/// row image rather than in the statement's own source row. SQL serializers map
-/// the projected expression to the backend's syntax for that image — `excluded.`
-/// for an upsert's proposed row, `old.` for an update's pre-update row, and an
-/// unqualified column for an update's post-update row.
+/// row rather than in the statement's source row.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprRow {
-    /// An application-model row before lowering.
-    Model {
-        /// The model the row belongs to.
-        model: ModelId,
-        /// The requested row image.
-        image: RowImage,
-    },
+    /// The row proposed by an upsert's create branch.
+    Incoming(ExprRowTarget),
 
-    /// A database-table row after lowering.
-    Table {
-        /// The table the row belongs to.
-        table: TableId,
-        /// The requested row image.
-        image: RowImage,
-    },
+    /// The row before an update.
+    Old(ExprRowTarget),
 }
 
 impl ExprRow {
-    /// Creates an application-model row for the given image.
-    pub fn model(model: ModelId, image: RowImage) -> Self {
-        Self::Model { model, image }
+    /// Creates an application-model row proposed by an upsert.
+    pub fn incoming_model(model: ModelId) -> Self {
+        Self::Incoming(ExprRowTarget::Model(model))
     }
 
-    /// Creates a database-table row for the given image.
-    pub fn table(table: TableId, image: RowImage) -> Self {
-        Self::Table { table, image }
+    /// Creates a database-table row proposed by an upsert.
+    pub fn incoming_table(table: TableId) -> Self {
+        Self::Incoming(ExprRowTarget::Table(table))
     }
 
-    /// Returns the selected row image.
-    pub fn image(&self) -> RowImage {
+    /// Creates an application-model row as it was before an update.
+    pub fn old_model(model: ModelId) -> Self {
+        Self::Old(ExprRowTarget::Model(model))
+    }
+
+    /// Creates a database-table row as it was before an update.
+    pub fn old_table(table: TableId) -> Self {
+        Self::Old(ExprRowTarget::Table(table))
+    }
+
+    /// Returns the model or table belonging to this row.
+    pub fn target(&self) -> ExprRowTarget {
         match self {
-            Self::Model { image, .. } | Self::Table { image, .. } => *image,
+            Self::Incoming(target) | Self::Old(target) => *target,
         }
     }
 }
