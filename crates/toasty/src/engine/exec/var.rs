@@ -75,7 +75,7 @@ impl VarStore {
 
         let values = match response.values {
             Rows::Count(_) => {
-                assert!(self.tys[var.0].is_unit());
+                assert!(self.tys[var.0].is_unit() || self.tys[var.0] == stmt::Type::U64);
                 response.values
             }
             Rows::Value(value) => {

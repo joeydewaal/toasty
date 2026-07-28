@@ -13,6 +13,9 @@ use crate::engine::{
 /// records where each parent contains its associated children.
 #[derive(Debug)]
 pub(crate) struct NestedMerge {
+    /// Type produced by the merge.
+    pub(crate) ty: stmt::Type,
+
     /// The nodes providing parent and child data to merge.
     pub(crate) inputs: IndexSet<mir::NodeId>,
 
@@ -40,7 +43,7 @@ impl NestedMerge {
             input_vars.push(var);
         }
 
-        let output = var_table.register_var(stmt::Type::list(self.root.projection.ret.clone()));
+        let output = var_table.register_var(self.ty.clone());
         node.var.set(Some(output));
 
         exec::NestedMerge {

@@ -22,6 +22,7 @@ use crate::{
 ///     filter: Filter::default(),
 ///     condition: Condition::default(),
 ///     returning: None,
+///     selection_single: false,
 /// };
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,9 @@ pub struct Update {
 
     /// Optional `RETURNING` clause.
     pub returning: Option<Returning>,
+
+    /// Whether the update selection targets at most one row.
+    pub selection_single: bool,
 }
 
 impl Statement {

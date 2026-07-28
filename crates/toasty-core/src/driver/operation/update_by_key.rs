@@ -48,12 +48,28 @@ pub struct UpdateByKey {
 
     /// The columns to return for each updated row.
     ///
-    /// `None` returns the affected-row count. `Some(columns)` returns one
+    /// `None` returns the affected-row count. `Some` returns one
     /// record per updated row containing exactly these columns, in this order,
     /// in the [`ExecResponse`](super::super::ExecResponse). The engine builds
     /// this list explicitly, so the driver never has to infer which columns to
     /// return from the assignments.
-    pub returning: Option<Vec<ColumnId>>,
+    pub returning: Option<UpdateReturning>,
+}
+
+/// Values returned by a key-value update.
+#[derive(Debug, Clone)]
+pub enum UpdateReturning {
+    /// Return post-update column values.
+    New(Vec<ColumnId>),
+}
+
+impl UpdateReturning {
+    /// Columns to return, in result order.
+    pub fn columns(&self) -> &[ColumnId] {
+        match self {
+            Self::New(columns) => columns,
+        }
+    }
 }
 
 impl From<UpdateByKey> for Operation {

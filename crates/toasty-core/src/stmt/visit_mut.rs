@@ -1440,7 +1440,7 @@ where
                 v.visit_include_mut(inc);
             }
         }
-        Returning::Changed => {}
+        Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr_mut(expr),
         Returning::Expr(expr) => v.visit_expr_mut(expr),
     }

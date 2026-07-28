@@ -217,7 +217,7 @@ impl Expand<'_> {
             //
             // The builder holds assignments and a target. The target knows how
             // to build the final update statement:
-            // - `T = GeneratedQuery`: query-based update, `Returning = List<Model>`
+            // - `T = GeneratedQuery`: query-based update, `Output = u64`
             // - `T = &mut Model`: instance update, `Returning = Model`
             #[derive(Clone)]
             #vis struct #update_struct_ident<#target_ty: #toasty::UpdateTarget = #query_struct_ident> {
@@ -243,27 +243,43 @@ impl Expand<'_> {
 
                 #builder_methods
 
-                fn build_stmt(&mut self) -> #toasty::core::stmt::Statement {
+                fn build_update(&mut self) -> #toasty::stmt::Update<#target_ty::Returning> {
                     use #toasty::UpdateTarget as _;
                     let assignments = ::std::mem::take(&mut self.assignments);
                     let mut stmt = self.target.to_update_stmt(assignments);
                     if let Some(cond) = self.condition.take() {
                         stmt.as_untyped_mut().condition = #toasty::core::stmt::Condition::new(cond);
                     }
-                    stmt.into_untyped()
+                    stmt
                 }
 
-                #vis async fn exec(mut self, executor: &mut dyn #toasty::Executor) -> #toasty::Result<()> {
+                fn build_stmt(&mut self) -> #toasty::core::stmt::Statement {
+                    self.build_update().into_untyped()
+                }
+
+                #vis async fn exec(mut self, executor: &mut dyn #toasty::Executor) -> #toasty::Result<#target_ty::Output> {
                     let response = executor.exec_untyped(self.build_stmt()).await?;
                     let value = response.values.collect_as_value().await?;
-                    self.target.apply_result(value)?;
-                    Ok(())
+                    self.target.apply_result(value)
                 }
+            }
+
+            impl #update_struct_ident<#query_struct_ident> {
+                /// Return every updated model.
+                #vis fn returning_all(mut self) -> #toasty::stmt::Update<#toasty::List<#model_ident>> {
+                    let mut update = self.build_update();
+                    update.as_untyped_mut().selection_single = false;
+                    update.with_returning(
+                        #toasty::core::stmt::Returning::Model { include: vec![] },
+                    )
+                }
+
             }
 
             // Implement UpdateTarget for &mut Model to enable reloading
             impl #toasty::UpdateTarget for &mut #model_ident {
                 type Returning = #model_ident;
+                type Output = ();
 
                 fn to_update_stmt(
                     &mut self,
@@ -277,30 +293,38 @@ impl Expand<'_> {
                     stmt
                 }
 
-                fn apply_result(self, value: #toasty::core::stmt::Value) -> #toasty::Result<()> {
+                fn apply_result(self, value: #toasty::core::stmt::Value) -> #toasty::Result<Self::Output> {
                     <#model_ident as #toasty::Load>::reload(self, value)
                 }
             }
 
             // Implement UpdateTarget for the generated query struct
             impl #toasty::UpdateTarget for #query_struct_ident {
-                type Returning = #toasty::List<#model_ident>;
+                type Returning = u64;
+                type Output = u64;
 
                 fn to_update_stmt(
                     &mut self,
                     assignments: #toasty::core::stmt::Assignments,
-                ) -> #toasty::stmt::Update<#toasty::List<#model_ident>> {
+                ) -> #toasty::stmt::Update<u64> {
                     let query = ::std::mem::replace(
                         &mut self.stmt,
                         #toasty::stmt::Query::all(),
                     );
-                    let mut stmt = #toasty::stmt::Update::new(query);
+                    let mut stmt = #toasty::stmt::Update::new(query)
+                        .with_returning(#toasty::core::stmt::Returning::Count);
                     stmt.set_assignments(assignments);
                     stmt
                 }
 
-                fn apply_result(self, _values: #toasty::core::stmt::Value) -> #toasty::Result<()> {
-                    Ok(())
+                fn apply_result(self, value: #toasty::core::stmt::Value) -> #toasty::Result<Self::Output> {
+                    match value {
+                        #toasty::core::stmt::Value::List(values) if values.is_empty() => Ok(0),
+                        #toasty::core::stmt::Value::List(mut values) if values.len() == 1 => {
+                            <u64 as #toasty::Load>::load(values.pop().unwrap())
+                        }
+                        value => <u64 as #toasty::Load>::load(value),
+                    }
                 }
             }
 
@@ -330,9 +354,9 @@ impl Expand<'_> {
             }
 
             impl #toasty::IntoStatement for #update_struct_ident {
-                type Returning = ();
+                type Returning = #toasty::UpdateCount;
 
-                fn into_statement(mut self) -> #toasty::Statement<()> {
+                fn into_statement(mut self) -> #toasty::Statement<Self::Returning> {
                     #toasty::Statement::from_untyped_stmt(self.build_stmt())
                 }
             }

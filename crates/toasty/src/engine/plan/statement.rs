@@ -189,7 +189,6 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     fn plan(&mut self, mut stmt: stmt::Statement) -> Result<()> {
         let mut returning = stmt.take_returning();
-
         // For single VALUES queries (e.g., batch queries), the VALUES body is
         // the output expression. Extract it as a returning value so the planner
         // can wire up sub-statement dependencies. An empty VALUES body (e.g. an
@@ -202,12 +201,17 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             && let stmt::ExprSet::Values(values) = &mut query.body
             && !values.rows.is_empty()
         {
-            returning = Some(stmt::Returning::Expr(if query.single {
+            let expr = if query.single {
                 assert_eq!(1, values.rows.len(), "single query has more than one row");
-                values.rows.drain(..).next().unwrap()
+                let expr = values.rows[0].take();
+                values.rows[0] = stmt::Expr::record::<stmt::Expr>([]);
+                expr
             } else {
-                stmt::Expr::list(std::mem::take(&mut values.rows))
-            }));
+                let expr = stmt::Expr::list(std::mem::take(&mut values.rows));
+                values.rows.push(stmt::Expr::record::<stmt::Expr>([]));
+                expr
+            };
+            returning = Some(stmt::Returning::Expr(expr));
         }
 
         // No queries are single at this point.
@@ -282,21 +286,24 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
     ) -> IndexSet<mir::NodeId> {
         let mut inputs = IndexSet::new();
 
-        let is_returning_projection = matches!(returning, Some(stmt::Returning::Project(..)));
+        let is_returning_projection = returning.as_ref().is_some_and(stmt::Returning::is_project);
         debug_assert!(
-            is_returning_projection || matches!(returning, None | Some(stmt::Returning::Expr(..)))
+            is_returning_projection
+                || matches!(
+                    returning.as_ref(),
+                    None | Some(stmt::Returning::Expr(..) | stmt::Returning::Count)
+                )
         );
 
-        match returning {
-            Some(stmt::Returning::Project(expr)) | Some(stmt::Returning::Expr(expr)) => {
-                self.rewrite_returning_inputs(
-                    expr,
-                    &mut inputs,
-                    load_data_node_id,
-                    is_returning_projection,
-                );
-            }
-            _ => {}
+        if let Some(stmt::Returning::Project(expr) | stmt::Returning::Expr(expr)) =
+            returning.as_mut()
+        {
+            self.rewrite_returning_inputs(
+                expr,
+                &mut inputs,
+                load_data_node_id,
+                is_returning_projection,
+            );
         }
 
         inputs
@@ -548,8 +555,9 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                     let (index, _) = self.load_data.inputs.insert_full(node_id);
                     data_load_input.set(Some(index));
 
-                    // If the target statement is a query, then we are in a batch-load scenario.
-                    if target_stmt_info.stmt().is_query() {
+                    // Query and update parents can yield one or more rows that
+                    // feed an eager relation load.
+                    if target_stmt_info.stmt().is_query() || target_stmt_info.stmt().is_update() {
                         debug_assert!(insert_row.is_none());
 
                         let (batch_load_table_ref_index, _) =
@@ -793,9 +801,27 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     fn plan_data_loading(
         &mut self,
-        stmt: stmt::Statement,
+        mut stmt: stmt::Statement,
         returning: &mut Returning,
     ) -> Result<mir::NodeId> {
+        if stmt.assignments().is_some_and(stmt::Assignments::is_empty)
+            && returning.as_ref().is_some_and(stmt::Returning::is_project)
+            && !self.load_data.select_items.is_empty()
+        {
+            // Relation lowering can consume every root assignment. Model returns
+            // that still need runtime columns read the selected roots after the
+            // relation mutations finish. Fully constantized instance reloads keep
+            // using the constant node below.
+            let update = stmt.into_update_unwrap();
+            stmt = stmt::Query::new_select(
+                stmt::Source::table(update.target.as_table_unwrap()),
+                update.filter,
+            )
+            .into();
+        }
+
+        let returns_count = returning.as_ref().is_some_and(stmt::Returning::is_count);
+
         // COUNT(*) is SQL-only
         if self.load_data.select_items.contains(&SelectItem::CountStar)
             && !self.planner.engine.capability().sql
@@ -816,9 +842,9 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         } else if stmt.is_insert() {
             self.plan_insert(stmt)
         } else if self.planner.engine.capability().sql {
-            self.plan_data_loading_sql(stmt)
+            self.plan_data_loading_sql(stmt, returns_count)
         } else {
-            self.plan_data_loading_nosql(stmt)
+            self.plan_data_loading_nosql(stmt, returns_count)
         }
     }
 
@@ -843,6 +869,13 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
         }
 
         if stmt.assignments().map(|a| a.is_empty()).unwrap_or(false) {
+            if returning.as_ref().is_some_and(stmt::Returning::is_count) {
+                // Relation mutations do not contribute to the affected root count.
+                return Some(
+                    self.insert_const(vec![stmt::Value::U64(0)], stmt::Type::list(stmt::Type::U64)),
+                );
+            }
+
             if returning.is_some() {
                 return Some(self.insert_const(
                     vec![stmt::Value::empty_sparse_record()],
@@ -917,7 +950,11 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     // ===== SQL execution =====
 
-    fn plan_data_loading_sql(&mut self, mut stmt: stmt::Statement) -> Result<mir::NodeId> {
+    fn plan_data_loading_sql(
+        &mut self,
+        mut stmt: stmt::Statement,
+        returns_count: bool,
+    ) -> Result<mir::NodeId> {
         debug_assert!(self.planner.engine.capability().sql, "stmt={stmt:#?}");
         debug_assert!(!stmt.is_insert(), "stmt={stmt:#?}");
 
@@ -926,12 +963,12 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
         // Set returning clause with all columns (including added ORDER BY columns)
         if !self.load_data.select_items.is_empty() {
-            stmt.set_returning_project(stmt::Expr::record(
+            stmt.set_returning(stmt::Returning::Project(stmt::Expr::record(
                 self.load_data
                     .select_items
                     .iter()
                     .map(|item| item.to_expr()),
-            ));
+            )));
         }
 
         let input_args: Vec<_> = self
@@ -942,7 +979,11 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             .collect();
 
         // Infer type after adding all columns
-        let ty = self.planner.engine.infer_ty(&stmt, &input_args[..]);
+        let ty = if returns_count {
+            stmt::Type::U64
+        } else {
+            self.planner.engine.infer_ty(&stmt, &input_args[..])
+        };
 
         // Phase 2: Build extract_cursor function using the inferred type
         let pagination_config = pagination_info.map(|info| self.build_extract_cursor(info, &ty));
@@ -1363,7 +1404,11 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
 
     // ===== NoSQL execution =====
 
-    fn plan_data_loading_nosql(&mut self, stmt: stmt::Statement) -> Result<mir::NodeId> {
+    fn plan_data_loading_nosql(
+        &mut self,
+        stmt: stmt::Statement,
+        returns_count: bool,
+    ) -> Result<mir::NodeId> {
         if stmt.is_insert() {
             debug_assert!(self.load_data.select_items.is_empty());
         }
@@ -1378,7 +1423,7 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             // record type must be computed AFTER this call.
             let post_filter = self.prepare_post_filter(&stmt, &mut index_plan);
 
-            let ty = self.infer_nosql_record_ty(&stmt);
+            let ty = self.infer_nosql_record_ty(&stmt, returns_count);
 
             let node_id = if index_plan.index.primary_key {
                 self.plan_primary_key_execution(stmt, &mut index_plan, &ty)
@@ -1389,12 +1434,16 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             Ok(self.apply_post_filter(node_id, post_filter, ty))
         } else {
             // No index covers the filter — emit a full-table scan.
-            let ty = self.infer_nosql_record_ty(&stmt);
+            let ty = self.infer_nosql_record_ty(&stmt, returns_count);
             self.plan_scan_execution(stmt, ty)
         }
     }
 
-    fn infer_nosql_record_ty(&self, stmt: &stmt::Statement) -> stmt::Type {
+    fn infer_nosql_record_ty(&self, stmt: &stmt::Statement, returns_count: bool) -> stmt::Type {
+        if returns_count {
+            return stmt::Type::U64;
+        }
+
         if self.load_data.select_items.is_empty() {
             if stmt.is_query() {
                 // Query with no columns selected is an existence check: return
@@ -1508,12 +1557,12 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
             } else {
                 // For mutations (UPDATE/DELETE) with a partial primary-key filter,
                 // first collect the full primary keys of all matching records via
-                // QueryPk, then apply the mutation to each key. The index key columns
-                // were pre-populated into load_data.select_items in plan_data_loading_nosql.
+                // QueryPk, then apply the mutation to each key. Key discovery has its
+                // own projection; update-returning columns belong to the downstream
+                // mutation and must not leak into the QueryPk result.
                 let index_key_ty = self.index_key_ty(index_plan);
 
-                let mut columns = self.load_data.select_items.extract_expr_references();
-                assert!(columns.is_empty());
+                let mut columns = IndexSet::new();
 
                 for index_col in &index_plan.index.columns {
                     columns.insert(stmt::ExprReference::Column(stmt::ExprColumn {
@@ -1958,6 +2007,10 @@ impl<'a, 'b> PlanStatement<'a, 'b> {
                         // Plan the final projection to handle the returning clause.
                         self.insert_mir_with_deps(node)
                     }
+                }
+                stmt::Returning::Count => {
+                    self.apply_dependencies_to_node(data_load_node_id);
+                    data_load_node_id
                 }
                 returning => panic!("unexpected `stmt::Returning` kind; returning={returning:#?}"),
             }

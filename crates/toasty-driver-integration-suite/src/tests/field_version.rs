@@ -392,7 +392,8 @@ pub async fn delete_checks_version(test: &mut Test) -> Result<()> {
 }
 
 /// An instance update whose row has been deleted fails instead of silently
-/// succeeding. SQL backends raise `record_not_found`.
+/// succeeding. SQL backends raise `record_not_found`; DynamoDB preserves the
+/// version condition failure.
 #[driver_test(scenario(crate::scenarios::versioned_item))]
 pub async fn update_after_delete_fails(test: &mut Test) -> Result<()> {
     let mut db = setup(test).await;
@@ -410,6 +411,11 @@ pub async fn update_after_delete_fails(test: &mut Test) -> Result<()> {
         assert!(
             err.is_record_not_found(),
             "expected record_not_found, got {err:?}"
+        );
+    } else {
+        assert!(
+            err.is_condition_failed(),
+            "expected condition_failed, got {err:?}"
         );
     }
 
@@ -441,6 +447,11 @@ pub async fn relative_update_after_delete_fails(test: &mut Test) -> Result<()> {
         assert!(
             err.is_record_not_found(),
             "expected record_not_found, got {err:?}"
+        );
+    } else {
+        assert!(
+            err.is_condition_failed(),
+            "expected condition_failed, got {err:?}"
         );
     }
 

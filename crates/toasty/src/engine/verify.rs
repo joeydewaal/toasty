@@ -623,13 +623,24 @@ mod tests {
     use super::*;
     use crate::engine::test_util::test_schema;
     use toasty_core::driver::Capability;
-    use toasty_core::stmt::{Expr, ExprIsSuperset, ExprList, Value};
+    use toasty_core::stmt::{
+        Assignments, Condition, Expr, ExprIsSuperset, ExprList, Filter, Returning, Update,
+        UpdateTarget, Value,
+    };
 
     fn verify_with(capability: &'static Capability, stmt: Statement) -> Result<()> {
         let schema = test_schema();
+        verify_with_schema(&schema, capability, stmt)
+    }
+
+    fn verify_with_schema(
+        schema: &toasty_core::Schema,
+        capability: &'static Capability,
+        stmt: Statement,
+    ) -> Result<()> {
         let mut error = None;
         Verify {
-            schema: &schema,
+            schema,
             capability,
             error: &mut error,
         }
@@ -660,6 +671,24 @@ mod tests {
             lhs: Box::new(Expr::arg(0)),
             rhs: Box::new(rhs),
         })
+    }
+
+    fn update_returning(
+        model: toasty_core::schema::app::ModelId,
+        returning: Returning,
+    ) -> Statement {
+        let mut assignments = Assignments::default();
+        assignments.set(0usize, Value::I64(1));
+
+        Update {
+            target: UpdateTarget::Model(model),
+            assignments,
+            filter: Filter::ALL,
+            condition: Condition::default(),
+            returning: Some(returning),
+            selection_single: false,
+        }
+        .into()
     }
 
     #[test]
@@ -733,6 +762,15 @@ mod tests {
         let err = verify_expr_with(&Capability::DYNAMODB, &expr)
             .expect("expected unsupported_feature error");
         assert!(err.is_unsupported_feature());
+    }
+
+    #[test]
+    fn update_returning_new_accepted_on_mysql() {
+        let stmt = update_returning(
+            toasty_core::schema::app::ModelId(0),
+            Returning::Model { include: vec![] },
+        );
+        assert!(verify_with(&Capability::MYSQL, stmt).is_ok());
     }
 
     #[test]

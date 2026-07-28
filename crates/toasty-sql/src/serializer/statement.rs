@@ -672,10 +672,7 @@ impl ToSql for &stmt::Update {
         let mut f = f.scope(self);
         f.alias = false;
 
-        let returning = self
-            .returning
-            .as_ref()
-            .map(|returning| (" RETURNING ", returning));
+        let returning = self.returning.as_ref();
 
         if returning.is_some() && f.serializer.is_mysql() {
             panic!(
@@ -693,7 +690,12 @@ impl ToSql for &stmt::Update {
             self.condition
         );
 
-        fmt!(&mut f, "UPDATE " self.target " SET " assignments self.filter returning);
+        fmt!(&mut f, "UPDATE " self.target " SET " assignments self.filter);
+
+        if let Some(returning) = returning {
+            fmt!(&mut f, " RETURNING ");
+            returning.to_sql(&mut f);
+        }
     }
 }
 

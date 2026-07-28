@@ -1438,7 +1438,7 @@ where
                 v.visit_include(inc);
             }
         }
-        Returning::Changed => {}
+        Returning::Changed | Returning::Count => {}
         Returning::Project(expr) => v.visit_expr(expr),
         Returning::Expr(expr) => v.visit_expr(expr),
     }

@@ -145,12 +145,10 @@ impl Rows {
     /// For [`Stream`](Self::Stream) variants, this consumes the entire stream.
     /// For [`Value`](Self::Value) variants, returns the value directly.
     ///
-    /// # Panics
-    ///
-    /// Panics if this is a [`Count`](Self::Count) variant.
+    /// [`Count`](Self::Count) values become [`Value::U64`](stmt::Value::U64).
     pub async fn collect_as_value(self) -> Result<stmt::Value> {
         match self {
-            Rows::Count(_) => panic!("expected value; actual={self:#?}"),
+            Rows::Count(count) => Ok(stmt::Value::U64(count)),
             Rows::Value(value) => Ok(value),
             Rows::Stream(stream) => Ok(stmt::Value::List(stream.collect().await?)),
         }

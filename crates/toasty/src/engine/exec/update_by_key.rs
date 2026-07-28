@@ -4,7 +4,7 @@ use crate::{
 };
 use toasty_core::{
     driver::{ExecResponse, Rows, operation},
-    schema::db::{ColumnId, TableId},
+    schema::db::TableId,
     stmt::{self, ValueStream},
 };
 
@@ -30,7 +30,7 @@ pub(crate) struct UpdateByKey {
 
     /// The columns to return for each updated row *after* the update. When
     /// `None`, just return the count of updated rows.
-    pub returning: Option<Vec<ColumnId>>,
+    pub returning: Option<operation::UpdateReturning>,
 }
 
 impl Exec<'_> {

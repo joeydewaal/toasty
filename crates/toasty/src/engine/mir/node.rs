@@ -53,7 +53,7 @@ impl Node {
             Operation::Project(m) => &m.ty,
             Operation::UpdateByKey(m) => &m.ty,
             Operation::Upsert(m) => &m.ty,
-            Operation::NestedMerge(_m) => todo!(),
+            Operation::NestedMerge(m) => &m.ty,
             Operation::ReadModifyWrite(m) => &m.ty,
         }
     }

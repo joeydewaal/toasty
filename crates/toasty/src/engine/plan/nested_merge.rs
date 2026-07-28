@@ -106,8 +106,10 @@ impl NestedMergePlanner<'_> {
         let root = self.plan_nested_level(root, 0);
         self.stack.pop();
 
+        let ty = stmt::Type::list(root.projection.ret.clone());
         self.mir.insert_with_deps(
             mir::NestedMerge {
+                ty,
                 inputs: self.inputs,
                 root,
                 hash_indexes: self.hash_indexes,
@@ -125,6 +127,13 @@ impl NestedMergePlanner<'_> {
         let selection = stmt_state.load_data_select_items.get().unwrap();
 
         let ret = match stmt_state.stmt.as_deref().unwrap() {
+            stmt::Statement::Query(query) if matches!(query.body, stmt::ExprSet::Values(_)) => {
+                NestedChild {
+                    level,
+                    qualification: MergeQualification::All,
+                    single: query.single,
+                }
+            }
             stmt::Statement::Query(query) => {
                 let filter_expr = self.build_filter_for_nested_child(stmt_id, selection, depth);
 
@@ -168,7 +177,16 @@ impl NestedMergePlanner<'_> {
                 qualification: MergeQualification::All,
                 single: insert.source.single,
             },
-            stmt => todo!("stmt={stmt:#?}"),
+            stmt::Statement::Update(update) => NestedChild {
+                level,
+                qualification: MergeQualification::All,
+                single: update.selection_single,
+            },
+            stmt::Statement::Delete(_) => NestedChild {
+                level,
+                qualification: MergeQualification::All,
+                single: true,
+            },
         };
 
         self.stack.pop();
@@ -179,34 +197,47 @@ impl NestedMergePlanner<'_> {
     fn plan_nested_level(&mut self, stmt_id: hir::StmtId, depth: usize) -> NestedLevel {
         let stmt_state = &self.hir[stmt_id];
         let stmt = stmt_state.stmt.as_deref().unwrap();
-        let returning = stmt.returning_unwrap();
 
         let source;
         let mut nested = vec![];
 
         // Map the returning clause to projection expression
-        let projection = match returning {
-            stmt::Returning::Project(expr) => {
-                let (s, _) = self
-                    .inputs
-                    .insert_full(stmt_state.load_data_statement.get().unwrap());
+        let projection = if let stmt::Statement::Query(query) = stmt
+            && let stmt::ExprSet::Values(values) = &query.body
+        {
+            assert!(query.single, "nested VALUES query must be single");
+            let [expr] = values.rows.as_slice() else {
+                panic!("single VALUES query must contain one expression")
+            };
+            let (s, _) = self
+                .inputs
+                .insert_full(stmt_state.load_data_statement.get().unwrap());
+            source = s;
+            self.build_projection_from_expr(stmt_id, expr, depth, &mut nested)
+        } else {
+            match stmt.returning_unwrap() {
+                stmt::Returning::Project(expr) => {
+                    let (s, _) = self
+                        .inputs
+                        .insert_full(stmt_state.load_data_statement.get().unwrap());
 
-                source = s;
-                self.build_projection_from_expr(stmt_id, expr, depth, &mut nested)
-            }
-            _ => {
-                let node_id = stmt_state.output.get().unwrap();
+                    source = s;
+                    self.build_projection_from_expr(stmt_id, expr, depth, &mut nested)
+                }
+                _ => {
+                    let node_id = stmt_state.output.get().unwrap();
 
-                let (s, _) = self.inputs.insert_full(node_id);
-                source = s;
+                    let (s, _) = self.inputs.insert_full(node_id);
+                    source = s;
 
-                // Flatten list (bit of a hack)
-                let ty = match self.mir[node_id].ty().clone() {
-                    stmt::Type::List(ty) => *ty,
-                    ty => ty,
-                };
+                    // Flatten list (bit of a hack)
+                    let ty = match self.mir[node_id].ty().clone() {
+                        stmt::Type::List(ty) => *ty,
+                        ty => ty,
+                    };
 
-                eval::Func::from_stmt(stmt::Expr::arg(0), vec![ty])
+                    eval::Func::from_stmt(stmt::Expr::arg(0), vec![ty])
+                }
             }
         };
 
@@ -287,10 +318,10 @@ impl NestedMergePlanner<'_> {
                         let child_stmt_id = *child_stmt_id;
                         let child_stmt_state = &hir[child_stmt_id];
                         let child_stmt = child_stmt_state.stmt.as_deref().unwrap();
-                        let child_returning = child_stmt.returning_unwrap();
-
-                        match child_returning {
-                            stmt::Returning::Expr(returning_expr) if returning_expr.is_const() => {
+                        match child_stmt.returning() {
+                            Some(stmt::Returning::Expr(returning_expr))
+                                if returning_expr.is_const() =>
+                            {
                                 match child_stmt {
                                     stmt::Statement::Query(query) if query.single => {
                                         let stmt::Expr::Value(v) = returning_expr else {
@@ -371,12 +402,9 @@ impl NestedMergePlanner<'_> {
                 // want to find a better way to track the info for more direct
                 // access.
                 let target_stmt = &self.hir[target_id];
-
-                let target_exec_statement_index = target_stmt
-                    .load_data_select_items
-                    .get()
-                    .unwrap()
-                    .get_index_of_expr_reference(*target_expr_ref);
+                let target_selection = target_stmt.load_data_select_items.get().unwrap();
+                let target_exec_statement_index =
+                    target_selection.get_index_of_expr_reference(*target_expr_ref);
 
                 *expr = stmt::Expr::arg_project(depth - *nesting, [target_exec_statement_index]);
             }

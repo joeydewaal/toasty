@@ -26,6 +26,9 @@ pub enum Returning {
     /// Return whether the operation changed any rows.
     Changed,
 
+    /// Return the number of rows affected by a mutation.
+    Count,
+
     /// Return the result of evaluating an expression against the source rows.
     Project(Expr),
 
@@ -73,6 +76,11 @@ impl Returning {
     /// Returns `true` if this is the `Changed` variant.
     pub fn is_changed(&self) -> bool {
         matches!(self, Self::Changed)
+    }
+
+    /// Returns `true` if this is the `Count` variant.
+    pub fn is_count(&self) -> bool {
+        matches!(self, Self::Count)
     }
 
     /// Returns `true` if this is the `Project` variant.

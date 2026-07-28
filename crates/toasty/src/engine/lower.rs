@@ -187,6 +187,9 @@ enum LoweringContext<'a> {
     /// parent INSERT's row index when visiting a per-row returning expression.
     Returning(Option<usize>),
 
+    /// Lowering an update statement.
+    Update,
+
     /// All other lowering cases
     Statement,
 }
@@ -813,14 +816,12 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                     let mapping = self.schema().mapping_for(*model);
                     let mapped = mapping
                         .resolve_field_mapping(&project.projection)
-                        .expect("incoming upsert field must map to a column");
+                        .expect("row field must map to a column");
                     let mut columns = mapped.columns();
-                    let (column, _) = columns
-                        .next()
-                        .expect("incoming upsert field has no database column");
+                    let (column, _) = columns.next().expect("row field has no database column");
                     assert!(
                         columns.next().is_none(),
-                        "incoming() does not yet support column-expanded embedded fields"
+                        "row projections do not support column-expanded embedded fields"
                     );
                     (mapping.table, column)
                 };
@@ -1034,7 +1035,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
     }
 
     fn visit_returning_mut(&mut self, i: &mut stmt::Returning) {
-        if let stmt::Returning::Model { include } = i {
+        if let stmt::Returning::Model { include, .. } = i {
             // Start from the schema's pre-computed default returning — every
             // Deferred fields, top-level or nested, are already `Null`.
             // `process_top_level_includes` then splices loaded forms in for
@@ -1047,7 +1048,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             self.prepare_model_returning_for_context(&mut returning, &mut include_paths, is_insert);
             self.process_top_level_includes(&mut returning, &include_paths, is_insert);
 
-            *i = stmt::Returning::Project(returning);
+            i.set_project(returning);
         }
 
         // For multi-row INSERT returning, visit each row with its row index so
@@ -1155,7 +1156,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             }
 
             if stmt.source.single
-                && let stmt::Returning::Expr(expr) = &returning
+                && let stmt::Returning::Expr(expr) = returning
             {
                 // Not strictly true, but there is nothing that needs to
                 // return a list at this point for a "single" query. If this
@@ -1182,7 +1183,13 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
             lower.visit_limit_mut(limit);
         }
 
-        self.visit_expr_set_mut(&mut stmt.body);
+        if matches!(self.cx, LoweringContext::Statement)
+            && matches!(stmt.body, stmt::ExprSet::Values(_))
+        {
+            self.lower_returning().visit_expr_set_mut(&mut stmt.body);
+        } else {
+            self.visit_expr_set_mut(&mut stmt.body);
+        }
 
         self.rewrite_offset_after_as_filter(stmt);
     }
@@ -1199,6 +1206,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
 
     fn visit_stmt_update_mut(&mut self, stmt: &mut stmt::Update) {
         let mut lower = self.scope_expr(&stmt.target);
+        lower.cx = LoweringContext::Update;
 
         let mut returning_changed = false;
 
@@ -1222,7 +1230,7 @@ impl visit_mut::VisitMut for LowerStatement<'_, '_> {
                 }
 
                 // Step 2 — build the returning expression.
-                *returning = stmt::Returning::Project(build_update_returning(
+                returning.set_project(build_update_returning(
                     model.id,
                     None,
                     &mapping.fields,
@@ -1595,11 +1603,12 @@ impl<'a, 'b> LowerStatement<'a, 'b> {
     fn lower_expr_field(&self, nesting: usize, index: usize) -> stmt::Expr {
         match self.cx {
             LoweringContext::Statement
+            | LoweringContext::Update
             | LoweringContext::Returning(_)
             | LoweringContext::Insert(..) => {
                 // Upsert update assignments are visited in the surrounding
                 // Insert context. Their field references read the stored row;
-                // proposed-row values use Expr::Incoming instead. Inserted
+                // proposed-row values use an ExprIncoming instead. Inserted
                 // value rows use the separate InsertRow branch below.
                 let mapping = self.mapping_at_unwrap(nesting);
                 mapping.table_to_model.lower_expr_reference(nesting, index)
@@ -1987,7 +1996,7 @@ impl LoweringContext<'_> {
     }
 
     fn is_statement(&self) -> bool {
-        matches!(self, LoweringContext::Statement)
+        matches!(self, LoweringContext::Statement | LoweringContext::Update)
     }
 }
 

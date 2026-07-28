@@ -141,6 +141,7 @@ fn update_stmt(with_where: bool, returning: Option<Returning>) -> stmt::Statemen
         filter,
         condition: stmt::Condition::default(),
         returning,
+        selection_single: false,
     }
     .into()
 }

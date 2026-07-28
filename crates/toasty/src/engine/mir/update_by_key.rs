@@ -51,26 +51,28 @@ impl UpdateByKey {
         let output = var_table.register_var(node.ty().clone());
         node.var.set(Some(output));
 
-        let returning = if self.ty.is_unit() {
+        let returning = if self.columns.is_empty() {
             None
         } else {
-            Some(
-                self.columns
-                    .iter()
-                    .map(|expr_reference| {
-                        let stmt::ExprReference::Column(expr_column) = expr_reference else {
-                            todo!()
-                        };
-                        debug_assert_eq!(expr_column.nesting, 0);
-                        debug_assert_eq!(expr_column.table, 0);
+            let columns = self
+                .columns
+                .iter()
+                .map(|expr_reference| {
+                    let stmt::ExprReference::Column(expr_column) = expr_reference else {
+                        todo!()
+                    };
+                    debug_assert_eq!(expr_column.nesting, 0);
+                    debug_assert_eq!(expr_column.table, 0);
 
-                        ColumnId {
-                            table: self.table,
-                            index: expr_column.column,
-                        }
-                    })
-                    .collect(),
-            )
+                    ColumnId {
+                        table: self.table,
+                        index: expr_column.column,
+                    }
+                })
+                .collect();
+            Some(toasty_core::driver::operation::UpdateReturning::New(
+                columns,
+            ))
         };
 
         exec::UpdateByKey {

@@ -42,6 +42,9 @@ trait RelationSource: std::fmt::Debug {
     /// Update a returning field expression
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr);
 
+    /// Whether relation mutations contribute to the source's return value.
+    fn needs_returning_field(&self) -> bool;
+
     /// Whether the source might produce zero rows. When true, relation
     /// mutations must be wrapped in a conditional to avoid FK updates when
     /// the source filter doesn't match.
@@ -411,10 +414,14 @@ impl LowerStatement<'_, '_> {
             stmt.source.single = false;
         }
 
-        // Run the canonical pipeline on the synthesized child insert and
-        // stitch it onto the parent as an `Expr::Arg`.
-        let arg = self.lower_sub_stmt(stmt::Statement::Insert(stmt));
-        source.set_returning_field(_field, arg);
+        if source.needs_returning_field() {
+            // Run the canonical pipeline on the synthesized child insert and
+            // stitch it onto the parent as an `Expr::Arg`.
+            let arg = self.lower_sub_stmt(stmt::Statement::Insert(stmt));
+            source.set_returning_field(_field, arg);
+        } else {
+            self.new_dependency(stmt);
+        }
     }
 
     fn plan_mut_belongs_to(
@@ -555,7 +562,7 @@ impl LowerStatement<'_, '_> {
                 // "belongs" in this field. We translate it to the key to set
                 // the FK fields in the source model.
                 assert!(matches!(
-                    insert.returning,
+                    insert.returning.as_ref(),
                     Some(stmt::Returning::Model { .. })
                 ));
 
@@ -805,6 +812,10 @@ impl RelationSource for &stmt::Delete {
         unimplemented!("delete statements do not need to update field values");
     }
 
+    fn needs_returning_field(&self) -> bool {
+        false
+    }
+
     fn needs_existence_check(&self) -> bool {
         false
     }
@@ -822,7 +833,7 @@ impl RelationSource for UpdateRelationSource<'_> {
     }
 
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
-        debug_assert!(self.returning_changed, "TODO");
+        debug_assert!(self.returning_changed);
 
         let Some(stmt::Returning::Project(stmt::Expr::Cast(expr_cast))) = self.returning else {
             todo!("UpdateRelationSource={self:#?}")
@@ -842,6 +853,10 @@ impl RelationSource for UpdateRelationSource<'_> {
         };
 
         set_returning_slot(record, position, expr, field.deferred);
+    }
+
+    fn needs_returning_field(&self) -> bool {
+        self.returning_changed
     }
 
     fn needs_existence_check(&self) -> bool {
@@ -874,7 +889,7 @@ impl RelationSource for InsertRelationSource<'_> {
     }
 
     fn set_returning_field(&mut self, field: &Field, expr: stmt::Expr) {
-        let record = match self.returning {
+        let record = match self.returning.as_mut() {
             Some(stmt::Returning::Project(stmt::Expr::Record(record))) => record,
             Some(stmt::Returning::Expr(stmt::Expr::List(rows))) => {
                 rows.items[self.index].as_record_mut_unwrap()
@@ -884,6 +899,10 @@ impl RelationSource for InsertRelationSource<'_> {
         };
 
         set_returning_slot(record, field.id.index, expr, field.deferred);
+    }
+
+    fn needs_returning_field(&self) -> bool {
+        true
     }
 
     fn needs_existence_check(&self) -> bool {

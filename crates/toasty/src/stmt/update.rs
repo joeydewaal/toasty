@@ -20,8 +20,11 @@ use toasty_core::stmt;
 /// Generated update-builders wrap this type and expose typed setter methods.
 /// You rarely construct `Update` by hand.
 ///
-/// By default, an update returns the changed records. Call
-/// [`set_returning_none`](Update::set_returning_none) to suppress this.
+/// An `Update` constructed directly returns changed records by default. A
+/// generated query update returns its affected count unless one of its
+/// `return_*` methods selects models instead. Call
+/// [`set_returning_none`](Update::set_returning_none) to suppress a raw typed
+/// update's result.
 pub struct Update<T> {
     pub(crate) untyped: stmt::Update,
     _p: PhantomData<T>,
@@ -32,7 +35,7 @@ impl<T> Update<T> {
     /// Create a new update statement from the given query selection.
     ///
     /// All records matched by `selection` will be updated. By default the
-    /// update returns the changed records (`Returning::Changed`).
+    /// update returns whether any records changed (`Returning::Changed`).
     ///
     /// # Examples
     ///
@@ -206,6 +209,13 @@ impl<T> Update<T> {
         self.untyped.returning = None;
     }
 
+    /// Change the typed result and untyped returning clause together.
+    #[doc(hidden)]
+    pub fn with_returning<R>(mut self, returning: stmt::Returning) -> Update<R> {
+        self.untyped.returning = Some(returning);
+        Update::from_untyped(self.untyped)
+    }
+
     /// Consume this typed update and return the untyped core statement.
     ///
     /// # Examples
@@ -258,6 +268,14 @@ impl<T: Load> Update<T> {
     }
 }
 
+impl<T> super::IntoStatement for Update<T> {
+    type Returning = T;
+
+    fn into_statement(self) -> super::Statement<T> {
+        self.into()
+    }
+}
+
 impl<M> Clone for Update<M> {
     fn clone(&self) -> Self {
         Self {
@@ -276,6 +294,7 @@ impl<M: Model> Default for Update<M> {
                 filter: stmt::Filter::new(stmt::Expr::from(false)),
                 condition: stmt::Condition::default(),
                 returning: Some(stmt::Returning::Changed),
+                selection_single: true,
             },
             _p: PhantomData,
         }

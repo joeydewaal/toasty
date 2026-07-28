@@ -40,6 +40,12 @@ impl LowerStatement<'_, '_> {
         includes: &mut Vec<stmt::Include>,
         is_insert: bool,
     ) {
+        // Update returning deliberately leaves relation fields unloaded. Eager
+        // relation loading for update results is added separately.
+        if matches!(self.cx, LoweringContext::Update) {
+            return;
+        }
+
         let model = self.model_unwrap();
         let stmt::Expr::Record(record) = returning else {
             return;
@@ -121,7 +127,7 @@ impl LowerStatement<'_, '_> {
     ///    - For each INSERT row, evaluate the RETURNING projection
     ///    - This produces a `stmt::Value` for each row
     ///
-    /// 3. **Replace** `stmt::Returning::Project(projection)` with
+    /// 3. **Replace** the `stmt::Returning::Project` expression with
     ///    `stmt::Returning::Expr(values)`
     ///    - Single-row inserts return a single value
     ///    - Multi-row inserts return a list of values
@@ -351,17 +357,17 @@ impl LowerStatement<'_, '_> {
     }
 }
 
-/// Constantize an update's returning clause from its lowered, column-indexed
-/// assignments: column references whose assignment is a constant `Set` are
-/// inlined, and a fully-constant projection is evaluated now, sparing the
-/// runtime returning path. A projection that still needs data (an unassigned
-/// column, a relative mutation) is left for runtime.
+/// Constantize an update's post-mutation returning clause from its lowered,
+/// column-indexed assignments: column references whose assignment is a
+/// constant `Set` are inlined, and a fully-constant projection is evaluated
+/// now, sparing the runtime returning path. A projection that still needs data
+/// (an unassigned column, a relative mutation) is left for runtime.
 pub(super) fn constantize_update_returning(
     cx: stmt::ExprContext<'_>,
     returning: &mut stmt::Returning,
     assignments: &stmt::Assignments,
 ) {
-    let stmt::Returning::Project(project) = returning else {
+    let Some(project) = returning.as_project_mut() else {
         // Already a constant value (e.g., empty record for batch
         // unit-returning); nothing to constantize.
         return;
@@ -381,7 +387,7 @@ pub(super) fn constantize_update_returning(
         source: ConstantizeSource::UpdateAssignments { assignments },
     };
     if let Ok(row) = project.eval(input) {
-        *returning = stmt::Returning::Project(row.into());
+        returning.set_project(row);
     }
 }
 
