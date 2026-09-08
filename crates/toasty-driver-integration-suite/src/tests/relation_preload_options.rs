@@ -313,12 +313,16 @@ pub async fn preload_has_many_limit_per_parent(test: &mut Test) -> Result<()> {
 pub async fn preload_has_many_limit_without_order(test: &mut Test) -> Result<()> {
     let mut db = setup(test).await;
 
-    toasty::create!(User::[
-        { name: "alice", todos: [{ title: "a" }, { title: "b" }, { title: "c" }] },
-        { name: "bob", todos: [{ title: "x" }, { title: "y" }, { title: "z" }] },
-    ])
-    .exec(&mut db)
-    .await?;
+    // TODO: seed with a single batch create once MySQL supports returning
+    // generated IDs from a multi-row insert (the per-row fallback deferred in
+    // tokio-rs/toasty#1190).
+    for (name, titles) in [("alice", ["a", "b", "c"]), ("bob", ["x", "y", "z"])] {
+        let user = toasty::create!(User { name }).exec(&mut db).await?;
+
+        for title in titles {
+            user.todos().create().title(title).exec(&mut db).await?;
+        }
+    }
 
     let users: Vec<User> = User::all()
         .include(User::fields().todos().limit(2))
@@ -338,12 +342,16 @@ pub async fn preload_has_many_limit_without_order(test: &mut Test) -> Result<()>
 pub async fn preload_has_many_limit_with_filter(test: &mut Test) -> Result<()> {
     let mut db = setup(test).await;
 
-    let user = toasty::create!(User {
-        name: "alice",
-        todos: [{ title: "a" }, { title: "c" }, { title: "b" }, { title: "d" }]
-    })
-    .exec(&mut db)
-    .await?;
+    // TODO: seed with a single batch create once MySQL supports returning
+    // generated IDs from a multi-row insert (the per-row fallback deferred in
+    // tokio-rs/toasty#1190).
+    let user = toasty::create!(User { name: "alice" })
+        .exec(&mut db)
+        .await?;
+
+    for title in ["a", "c", "b", "d"] {
+        user.todos().create().title(title).exec(&mut db).await?;
+    }
 
     let loaded = User::filter_by_id(user.id)
         .include(
@@ -370,12 +378,16 @@ pub async fn preload_has_many_limit_with_filter(test: &mut Test) -> Result<()> {
 pub async fn preload_has_many_limit_bounds(test: &mut Test) -> Result<()> {
     let mut db = setup(test).await;
 
-    let user = toasty::create!(User {
-        name: "alice",
-        todos: [{ title: "a" }, { title: "b" }]
-    })
-    .exec(&mut db)
-    .await?;
+    // TODO: seed with a single batch create once MySQL supports returning
+    // generated IDs from a multi-row insert (the per-row fallback deferred in
+    // tokio-rs/toasty#1190).
+    let user = toasty::create!(User { name: "alice" })
+        .exec(&mut db)
+        .await?;
+
+    for title in ["a", "b"] {
+        user.todos().create().title(title).exec(&mut db).await?;
+    }
 
     let loaded = User::filter_by_id(user.id)
         .include(
